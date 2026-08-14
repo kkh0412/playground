@@ -148,11 +148,9 @@ function tr(ko, en) {
 
 
 STATIC_I18N.push(
-  ["#lobbyBgmTitle", "배경음악", "Background music", "text"],
   ["#lobbyChatTitle", "방 채팅", "Room chat", "text"],
   ["#lobbyChatSendBtn", "전송", "Send", "text"],
   ["#lobbyChatInput", "메시지를 입력하세요", "Enter a message", "placeholder"],
-  [".waiting-bgm-panel .eyebrow", "배경음악", "BGM", "text"],
   [".waiting-chat-panel .eyebrow", "방 채팅", "ROOM CHAT", "text"]
 );
 
@@ -3644,17 +3642,10 @@ function startBgmSegmentMonitor() {
 
 function populateBgmTrackSelect(select) {
   select.innerHTML = BGM_TRACKS
-    .map((track, index) => {
-      const number = String(index + 1).padStart(2, "0");
-
-      return `
-        <option value="${index}">
-          ${number}. ${escapeHTML(track.title)}
-          — ${escapeHTML(track.artist)}
-          (${track.stamp})
-        </option>
-      `;
-    })
+    .map(
+      (track, index) =>
+        `<option value="${index}">${escapeHTML(track.title)}</option>`
+    )
     .join("");
 
   select.value = String(state.bgmTrackIndex);

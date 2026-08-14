@@ -3096,3 +3096,180 @@ body.spectator-mode #rollBtn {
     height: 190px;
   }
 }
+
+
+/* ============================================================
+   Demo v16 — cleaner music selector + inline waiting-room BGM
+   ============================================================ */
+
+.bgm-select-shell {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  height: 40px;
+  overflow: hidden;
+  border: 1px solid rgba(109, 74, 255, .16);
+  border-radius: 13px;
+  background:
+    linear-gradient(180deg, #ffffff 0%, #f8f7ff 100%);
+  box-shadow:
+    0 1px 2px rgba(16, 24, 40, .04),
+    0 4px 12px rgba(109, 74, 255, .035);
+  transition:
+    border-color .18s ease,
+    box-shadow .18s ease,
+    transform .18s ease;
+}
+
+.bgm-select-shell:hover {
+  border-color: rgba(109, 74, 255, .34);
+  box-shadow:
+    0 1px 2px rgba(16, 24, 40, .04),
+    0 6px 16px rgba(109, 74, 255, .08);
+}
+
+.bgm-select-shell:focus-within {
+  border-color: #8b73ff;
+  box-shadow:
+    0 0 0 4px rgba(109, 74, 255, .09),
+    0 6px 16px rgba(109, 74, 255, .08);
+}
+
+.bgm-select-icon {
+  flex: 0 0 auto;
+  padding-left: 12px;
+  color: #6d4aff;
+  font-size: 13px;
+  font-weight: 900;
+  pointer-events: none;
+}
+
+.polished-bgm-select {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  padding: 0 34px 0 8px !important;
+  border: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: #344054;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.polished-bgm-select option {
+  color: #182230;
+  background: #fff;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.bgm-select-chevron {
+  position: absolute;
+  right: 11px;
+  top: 50%;
+  transform: translateY(-54%);
+  color: #7f56d9;
+  font-size: 16px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.polished-bgm-player {
+  gap: 8px;
+}
+
+.polished-bgm-player .bgm-select-shell {
+  width: clamp(175px, 24vw, 245px);
+}
+
+/* Waiting room: code/copy/BGM now share the top row. */
+.room-heading-with-bgm {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.room-heading-copy {
+  min-width: 0;
+}
+
+.room-heading-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.lobby-bgm-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.compact-bgm-toggle {
+  height: 40px;
+  padding-inline: 12px;
+  white-space: nowrap;
+}
+
+.lobby-bgm-select-shell {
+  width: clamp(170px, 24vw, 230px);
+}
+
+/* Lower waiting-room area now contains only chat. */
+.waiting-room-tools {
+  grid-template-columns: 1fr !important;
+}
+
+.waiting-chat-panel {
+  width: 100%;
+}
+
+.waiting-bgm-panel,
+.waiting-tool-heading,
+.lobby-bgm-player {
+  display: none !important;
+}
+
+@media (max-width: 920px) {
+  .room-heading-with-bgm {
+    flex-direction: column;
+  }
+
+  .room-heading-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 620px) {
+  .room-heading-actions {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+  }
+
+  .lobby-bgm-inline {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .lobby-bgm-select-shell {
+    flex: 1 1 auto;
+    width: auto;
+  }
+
+  .polished-bgm-player .bgm-select-shell {
+    width: min(100%, 245px);
+  }
+}

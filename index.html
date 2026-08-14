@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content="친구들과 함께 즐기는 온라인 미니게임 Playground" />
   <title>대관령산양의 놀이터</title>
-  <link rel="stylesheet" href="style.css?v=20260815-v15-1" />
+  <link rel="stylesheet" href="style.css?v=20260815-v16-1" />
 </head>
 <body>
   <header class="site-header">
@@ -362,13 +362,34 @@
         </section>
 
         <section id="activeRoomPanel" class="card active-room-panel hidden">
-          <div class="room-heading">
-            <div>
+          <div class="room-heading room-heading-with-bgm">
+            <div class="room-heading-copy">
               <p class="eyebrow">YOUR ROOM</p>
               <h2 id="activeRoomName">게임방</h2>
               <p class="room-code-line">방 코드 <strong id="roomCodeText">------</strong></p>
             </div>
-            <button id="copyRoomCodeBtn" class="secondary-btn">코드 복사</button>
+
+            <div class="room-heading-actions">
+              <button id="copyRoomCodeBtn" class="secondary-btn">코드 복사</button>
+
+              <div class="lobby-bgm-inline" aria-label="대기방 배경음악 플레이어">
+                <button
+                  id="lobbyBgmToggleBtn"
+                  class="ghost-btn bgm-toggle compact-bgm-toggle"
+                  type="button"
+                >♫ BGM OFF</button>
+
+                <label class="bgm-select-shell lobby-bgm-select-shell">
+                  <span class="bgm-select-icon" aria-hidden="true">♫</span>
+                  <select
+                    id="lobbyBgmTrackSelect"
+                    class="bgm-select polished-bgm-select"
+                    aria-label="대기방 배경음악 곡 선택"
+                  ></select>
+                  <span class="bgm-select-chevron" aria-hidden="true">⌄</span>
+                </label>
+              </div>
+            </div>
           </div>
 
           <div class="room-info-row">
@@ -386,20 +407,6 @@
           </div>
 
           <div class="waiting-room-tools">
-            <section class="waiting-bgm-panel">
-              <div class="waiting-tool-heading">
-                <div>
-                  <p class="eyebrow">BGM</p>
-                  <h3 id="lobbyBgmTitle">배경음악</h3>
-                </div>
-              </div>
-
-              <div class="bgm-player lobby-bgm-player" aria-label="대기방 배경음악 플레이어">
-                <button id="lobbyBgmToggleBtn" class="ghost-btn bgm-toggle" type="button">♫ BGM OFF</button>
-                <select id="lobbyBgmTrackSelect" class="bgm-select" aria-label="대기방 배경음악 곡 선택"></select>
-              </div>
-            </section>
-
             <section class="waiting-chat-panel">
               <div class="chat-header">
                 <div>
@@ -431,9 +438,18 @@
           <button id="leaveGameBtn" class="text-btn">← 홈으로</button>
 
           <div class="game-topbar-right">
-            <div class="bgm-player" aria-label="BGM 플레이어">
+            <div class="bgm-player polished-bgm-player" aria-label="BGM 플레이어">
               <button id="bgmToggleBtn" class="ghost-btn bgm-toggle" type="button">♫ BGM OFF</button>
-              <select id="bgmTrackSelect" class="bgm-select" aria-label="BGM 곡 선택"></select>
+
+              <label class="bgm-select-shell">
+                <span class="bgm-select-icon" aria-hidden="true">♫</span>
+                <select
+                  id="bgmTrackSelect"
+                  class="bgm-select polished-bgm-select"
+                  aria-label="BGM 곡 선택"
+                ></select>
+                <span class="bgm-select-chevron" aria-hidden="true">⌄</span>
+              </label>
             </div>
 
             <div class="game-room-code">
@@ -621,6 +637,6 @@
   <div id="toast" class="toast hidden" aria-live="polite"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="main.js?v=20260815-v15-1"></script>
+  <script src="main.js?v=20260815-v16-1"></script>
 </body>
 </html>
