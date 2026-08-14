@@ -142,9 +142,28 @@ async function sha256Hex(text) {
     .join("");
 }
 
+const ADMIN_LOGIN_ID = "대관령산양";
+const ADMIN_LEGACY_AUTH_KEY = "kkh0412";
+
+function normalizedLoginId(username) {
+  return normalizeUsername(username).toLocaleLowerCase();
+}
+
+function isOldAdminLoginId(username) {
+  return normalizedLoginId(username) === ADMIN_LEGACY_AUTH_KEY;
+}
+
 async function usernameToInternalEmail(username) {
-  const normalized = normalizeUsername(username).toLocaleLowerCase();
-  const hash = await sha256Hex(normalized);
+  const normalized = normalizedLoginId(username);
+
+  // The admin's original Supabase Auth identity was created from "kkh0412".
+  // Keep that Auth identity intact, but expose/login with the new ID.
+  const authIdentityKey =
+    normalized === ADMIN_LOGIN_ID.toLocaleLowerCase()
+      ? ADMIN_LEGACY_AUTH_KEY
+      : normalized;
+
+  const hash = await sha256Hex(authIdentityKey);
   return `u_${hash.slice(0, 40)}@playground.example.com`;
 }
 
@@ -666,6 +685,11 @@ async function signup(event) {
 
   message.textContent = "";
 
+  if (isOldAdminLoginId(username)) {
+    message.textContent = "이 아이디는 더 이상 사용할 수 없습니다.";
+    return;
+  }
+
   if (!validUsername(username)) {
     message.textContent = "아이디는 3–20자의 한글/영문/숫자/_/-만 사용할 수 있습니다.";
     return;
@@ -727,6 +751,12 @@ async function login(event) {
   const submitButton = el("loginForm").querySelector('button[type="submit"]');
 
   message.textContent = "";
+
+  if (isOldAdminLoginId(username)) {
+    message.textContent = "아이디 또는 비밀번호가 올바르지 않습니다.";
+    return;
+  }
+
   submitButton.disabled = true;
   submitButton.textContent = "로그인 중...";
 
