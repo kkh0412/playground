@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content="친구들과 함께 즐기는 온라인 미니게임 Playground" />
   <title>대관령산양의 놀이터</title>
-  <link rel="stylesheet" href="style.css?v=20260815-v13-1" />
+  <link rel="stylesheet" href="style.css?v=20260815-v14-1" />
 </head>
 <body>
   <header class="site-header">
@@ -384,6 +384,43 @@
             <button id="resumeRoomBtn" class="primary-btn large hidden">게임으로 돌아가기</button>
             <button id="leaveRoomBtn" class="secondary-btn large">방 나가기</button>
           </div>
+
+          <div class="waiting-room-tools">
+            <section class="waiting-bgm-panel">
+              <div class="waiting-tool-heading">
+                <div>
+                  <p class="eyebrow">BGM</p>
+                  <h3 id="lobbyBgmTitle">배경음악</h3>
+                </div>
+              </div>
+
+              <div class="bgm-player lobby-bgm-player" aria-label="대기방 배경음악 플레이어">
+                <button id="lobbyBgmToggleBtn" class="ghost-btn bgm-toggle" type="button">♫ BGM OFF</button>
+                <select id="lobbyBgmTrackSelect" class="bgm-select" aria-label="대기방 배경음악 곡 선택"></select>
+              </div>
+            </section>
+
+            <section class="waiting-chat-panel">
+              <div class="chat-header">
+                <div>
+                  <p class="eyebrow">ROOM CHAT</p>
+                  <h3 id="lobbyChatTitle">방 채팅</h3>
+                </div>
+                <span id="lobbyChatCount" class="chat-count">0</span>
+              </div>
+
+              <div id="lobbyChatMessages" class="chat-messages lobby-chat-messages" aria-live="polite"></div>
+
+              <form id="lobbyChatForm" class="chat-form">
+                <div class="chat-input-wrap">
+                  <button id="lobbyEmojiToggleBtn" class="emoji-toggle-btn" type="button" aria-label="이모티콘 열기">☺</button>
+                  <input id="lobbyChatInput" maxlength="200" placeholder="메시지를 입력하세요" autocomplete="off" />
+                  <div id="lobbyEmojiPicker" class="emoji-picker hidden" aria-label="이모티콘 선택"></div>
+                </div>
+                <button id="lobbyChatSendBtn" class="primary-btn" type="submit">전송</button>
+              </form>
+            </section>
+          </div>
         </section>
       </div>
     </section>
@@ -584,6 +621,6 @@
   <div id="toast" class="toast hidden" aria-live="polite"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="main.js?v=20260815-v13-1"></script>
+  <script src="main.js?v=20260815-v14-1"></script>
 </body>
 </html>

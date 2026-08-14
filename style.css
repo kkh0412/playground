@@ -3030,3 +3030,69 @@ body.spectator-mode #rollBtn {
   min-width: 42px;
   font-weight: 900;
 }
+
+
+/* ============================================================
+   Demo v14 — waiting-room music + room chat
+   ============================================================ */
+
+.waiting-room-tools {
+  display: grid;
+  grid-template-columns: minmax(250px, .72fr) minmax(340px, 1.28fr);
+  gap: 14px;
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid #eaecf0;
+}
+
+.waiting-bgm-panel,
+.waiting-chat-panel {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid #eaecf0;
+  border-radius: 15px;
+  background: #fbfcfd;
+}
+
+.waiting-tool-heading,
+.waiting-chat-panel .chat-header {
+  margin-bottom: 12px;
+}
+
+.waiting-tool-heading h3,
+.waiting-chat-panel h3 {
+  margin: 2px 0 0;
+  color: #182230;
+  font-size: 15px;
+}
+
+.lobby-bgm-player {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  width: 100%;
+}
+
+.lobby-bgm-player .bgm-select {
+  width: 100%;
+  min-width: 0;
+}
+
+.lobby-chat-messages {
+  height: 210px;
+  margin-bottom: 10px;
+}
+
+.waiting-chat-panel .chat-form {
+  margin-top: 0;
+}
+
+@media (max-width: 820px) {
+  .waiting-room-tools {
+    grid-template-columns: 1fr;
+  }
+
+  .lobby-chat-messages {
+    height: 190px;
+  }
+}

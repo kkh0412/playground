@@ -148,6 +148,15 @@ function tr(ko, en) {
 
 
 STATIC_I18N.push(
+  ["#lobbyBgmTitle", "배경음악", "Background music", "text"],
+  ["#lobbyChatTitle", "방 채팅", "Room chat", "text"],
+  ["#lobbyChatSendBtn", "전송", "Send", "text"],
+  ["#lobbyChatInput", "메시지를 입력하세요", "Enter a message", "placeholder"],
+  [".waiting-bgm-panel .eyebrow", "배경음악", "BGM", "text"],
+  [".waiting-chat-panel .eyebrow", "방 채팅", "ROOM CHAT", "text"]
+);
+
+STATIC_I18N.push(
   [".account-note p:nth-of-type(1)",
     "비밀번호는 웹페이지에 저장하지 않고 Supabase Auth가 처리합니다. 경기 기록은 서버 DB에 저장되어 다른 기기에서 로그인해도 유지됩니다.",
     "Passwords are handled by Supabase Auth and are not stored by this webpage. Match records are stored in the server database and remain available across devices.",
@@ -410,7 +419,11 @@ function categoryRule(category) {
 }
 
 
-const BGM_AUDIO_SRC = "audio/bgm.mp3";
+const BGM_LOCAL_SRC = "audio/bgm.mp3";
+const BGM_GITHUB_CONTENTS_API =
+  "https://api.github.com/repos/kkh0412/playground/contents/audio?ref=main";
+const BGM_RAW_FALLBACK =
+  "https://raw.githubusercontent.com/kkh0412/playground/main/audio/bgm.mp3";
 
 const BGM_TRACKS = [
   { title: "About That Oldie", artist: "Vibe Tracks", start: 0, stamp: "00:00" },
@@ -471,6 +484,8 @@ const state = {
   bgmEnabled: false,
   bgmTrackIndex: 0,
   bgmSegmentMonitor: null,
+  bgmResolvedSrc: null,
+  bgmResolvePromise: null,
   accountGuardPoller: null,
   accountGuardMisses: 0,
   adminPoller: null,
@@ -678,14 +693,22 @@ function isAdmin() {
 
 function navigate(page, options = {}) {
   const { remember = true, scroll = true } = options;
-  const leavingGame = state.page === "game" && page !== "game";
 
-  if (leavingGame) {
+  const currentIsYachtArea =
+    state.page === "lobby" || state.page === "game";
+
+  const nextIsYachtArea =
+    page === "lobby" || page === "game";
+
+  const leavingGame =
+    state.page === "game" && page !== "game";
+
+  if (currentIsYachtArea && !nextIsYachtArea) {
     pauseBgm();
+  }
 
-    if (state.isSpectator) {
-      detachSpectatorForNavigation();
-    }
+  if (leavingGame && state.isSpectator) {
+    detachSpectatorForNavigation();
   }
 
   if ((page === "lobby" || page === "game") && !isLoggedIn()) {
@@ -1470,8 +1493,15 @@ async function refreshLobby() {
 
   stopPublicRoomPolling();
   await subscribeRoom(state.activeRoom.id);
-  await loadRoomPlayers();
+
+  await Promise.all([
+    loadRoomPlayers(),
+    loadMessages()
+  ]);
+
   renderActiveRoom();
+  renderChat();
+  syncBgmControls();
 
   if (state.activeRoom.status === "playing") {
     el("resumeRoomBtn").classList.remove("hidden");
@@ -1883,6 +1913,8 @@ async function leaveWaitingRoom() {
     cleanupRoomChannel();
     state.activeRoom = null;
     state.roomPlayers = [];
+    state.messages = [];
+    renderChat();
     showToast(tr("방에서 나왔습니다.", "Left the room."));
     await refreshLobby();
   } catch (error) {
@@ -3412,6 +3444,153 @@ function selectedBgmEnd(audio) {
     : Infinity;
 }
 
+function allBgmTrackSelects() {
+  return [
+    el("bgmTrackSelect"),
+    el("lobbyBgmTrackSelect")
+  ].filter(Boolean);
+}
+
+function allBgmToggleButtons() {
+  return [
+    el("bgmToggleBtn"),
+    el("lobbyBgmToggleBtn")
+  ].filter(Boolean);
+}
+
+function syncBgmControls() {
+  allBgmTrackSelects().forEach(select => {
+    select.value = String(state.bgmTrackIndex);
+  });
+
+  allBgmToggleButtons().forEach(button => {
+    button.textContent = state.language === "ko"
+      ? (state.bgmEnabled ? "♫ 배경음악 켬" : "♫ 배경음악 끔")
+      : (state.bgmEnabled ? "♫ BGM ON" : "♫ BGM OFF");
+
+    button.classList.toggle("active", state.bgmEnabled);
+  });
+}
+
+async function sourceExists(url) {
+  try {
+    const response = await fetch(url, {
+      method: "HEAD",
+      cache: "no-store"
+    });
+
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function discoverGithubMp3() {
+  const response = await fetch(BGM_GITHUB_CONTENTS_API, {
+    headers: {
+      "Accept": "application/vnd.github+json"
+    },
+    cache: "no-store"
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `GitHub audio directory lookup failed (${response.status})`
+    );
+  }
+
+  const items = await response.json();
+
+  if (!Array.isArray(items)) {
+    throw new Error("GitHub audio directory response is invalid");
+  }
+
+  const mp3Files = items.filter(item =>
+    item?.type === "file" &&
+    typeof item.name === "string" &&
+    item.name.toLowerCase().endsWith(".mp3")
+  );
+
+  if (!mp3Files.length) {
+    throw new Error("No MP3 file exists in the GitHub audio directory");
+  }
+
+  const preferred =
+    mp3Files.find(item => item.name.toLowerCase() === "bgm.mp3") ||
+    mp3Files[0];
+
+  // A real long MP3 should not be only a few bytes/kilobytes.
+  // This catches the usual Git LFS pointer case.
+  if (Number(preferred.size || 0) > 0 && Number(preferred.size) < 2048) {
+    throw new Error(
+      "The MP3 in GitHub appears to be a Git LFS pointer, not the audio file"
+    );
+  }
+
+  if (!preferred.download_url) {
+    throw new Error("GitHub did not return a downloadable MP3 URL");
+  }
+
+  return {
+    url: preferred.download_url,
+    name: preferred.name,
+    size: Number(preferred.size || 0)
+  };
+}
+
+async function resolveBgmSource() {
+  if (state.bgmResolvedSrc) {
+    return state.bgmResolvedSrc;
+  }
+
+  if (state.bgmResolvePromise) {
+    return state.bgmResolvePromise;
+  }
+
+  state.bgmResolvePromise = (async () => {
+    const localUrl = new URL(BGM_LOCAL_SRC, document.baseURI).href;
+
+    // 1. GitHub Pages deployment with the expected file name.
+    if (await sourceExists(localUrl)) {
+      state.bgmResolvedSrc = localUrl;
+      return localUrl;
+    }
+
+    // 2. Public GitHub repository: discover the actual MP3 file name.
+    try {
+      const discovered = await discoverGithubMp3();
+
+      console.info(
+        `BGM discovered in GitHub: ${discovered.name}`,
+        discovered.url
+      );
+
+      state.bgmResolvedSrc = discovered.url;
+      return discovered.url;
+    } catch (error) {
+      console.error("GitHub BGM discovery:", error);
+
+      if (String(error?.message || "").includes("Git LFS pointer")) {
+        throw error;
+      }
+    }
+
+    // 3. Correctly named raw file, useful while Pages deployment lags.
+    if (await sourceExists(BGM_RAW_FALLBACK)) {
+      state.bgmResolvedSrc = BGM_RAW_FALLBACK;
+      return BGM_RAW_FALLBACK;
+    }
+
+    throw new Error("BGM_MP3_NOT_FOUND");
+  })();
+
+  try {
+    return await state.bgmResolvePromise;
+  } finally {
+    state.bgmResolvePromise = null;
+  }
+}
+
 function stopBgmSegmentMonitor() {
   if (state.bgmSegmentMonitor !== null) {
     cancelAnimationFrame(state.bgmSegmentMonitor);
@@ -3433,7 +3612,6 @@ function startBgmSegmentMonitor() {
     const track = selectedBgmTrack();
     const end = selectedBgmEnd(audio);
 
-    // Keep playback strictly inside the selected chapter of the combined MP3.
     if (
       audio.currentTime < track.start - 0.15 ||
       audio.currentTime >= end - 0.025
@@ -3447,19 +3625,7 @@ function startBgmSegmentMonitor() {
   state.bgmSegmentMonitor = requestAnimationFrame(tick);
 }
 
-function initBgmControls() {
-  const select = el("bgmTrackSelect");
-  const savedTrack = Number(
-    localStorage.getItem("playground_bgm_track") || 0
-  );
-
-  state.bgmTrackIndex =
-    Number.isInteger(savedTrack) &&
-    savedTrack >= 0 &&
-    savedTrack < BGM_TRACKS.length
-      ? savedTrack
-      : 0;
-
+function populateBgmTrackSelect(select) {
   select.innerHTML = BGM_TRACKS
     .map((track, index) => {
       const number = String(index + 1).padStart(2, "0");
@@ -3475,9 +3641,23 @@ function initBgmControls() {
     .join("");
 
   select.value = String(state.bgmTrackIndex);
+}
+
+function initBgmControls() {
+  const savedTrack = Number(
+    localStorage.getItem("playground_bgm_track") || 0
+  );
+
+  state.bgmTrackIndex =
+    Number.isInteger(savedTrack) &&
+    savedTrack >= 0 &&
+    savedTrack < BGM_TRACKS.length
+      ? savedTrack
+      : 0;
+
+  allBgmTrackSelects().forEach(populateBgmTrackSelect);
 
   const audio = el("bgmAudio");
-  audio.src = BGM_AUDIO_SRC;
   audio.preload = "metadata";
 
   audio.addEventListener("ended", () => {
@@ -3485,22 +3665,17 @@ function initBgmControls() {
 
     const track = selectedBgmTrack();
     audio.currentTime = track.start;
+
     audio.play()
       .then(startBgmSegmentMonitor)
       .catch(() => {});
   });
 
-  updateBgmButton();
+  syncBgmControls();
 }
 
 function updateBgmButton() {
-  const button = el("bgmToggleBtn");
-
-  button.textContent = state.language === "ko"
-    ? (state.bgmEnabled ? "♫ 배경음악 켬" : "♫ 배경음악 끔")
-    : (state.bgmEnabled ? "♫ BGM ON" : "♫ BGM OFF");
-
-  button.classList.toggle("active", state.bgmEnabled);
+  syncBgmControls();
 }
 
 function waitForAudioMetadata(audio) {
@@ -3540,14 +3715,26 @@ function waitForAudioMetadata(audio) {
   });
 }
 
-async function playSelectedBgm(restart = false) {
+async function ensureBgmAudioSource() {
   const audio = el("bgmAudio");
-  const track = selectedBgmTrack();
-  const end = selectedBgmEnd(audio);
+  const resolved = await resolveBgmSource();
 
+  if (audio.src !== resolved) {
+    audio.src = resolved;
+    audio.load();
+  }
+
+  return audio;
+}
+
+async function playSelectedBgm(restart = false) {
   try {
+    const audio = await ensureBgmAudioSource();
+    const track = selectedBgmTrack();
+
     await waitForAudioMetadata(audio);
 
+    const end = selectedBgmEnd(audio);
     const outsideSelectedTrack =
       audio.currentTime < track.start ||
       audio.currentTime >= end;
@@ -3559,21 +3746,33 @@ async function playSelectedBgm(restart = false) {
     await audio.play();
 
     state.bgmEnabled = true;
-    updateBgmButton();
+    syncBgmControls();
     startBgmSegmentMonitor();
+
   } catch (error) {
     console.error("BGM:", error);
 
     state.bgmEnabled = false;
     stopBgmSegmentMonitor();
-    updateBgmButton();
+    syncBgmControls();
 
-    showToast(
-      tr(
-        "합본 배경음악 파일 audio/bgm.mp3가 필요합니다.",
-        "The combined BGM file audio/bgm.mp3 is required."
-      )
-    );
+    if (
+      String(error?.message || "").includes("Git LFS pointer")
+    ) {
+      showToast(
+        tr(
+          "GitHub의 MP3가 실제 음원이 아니라 Git LFS 포인터입니다. 실제 MP3 파일로 올려야 합니다.",
+          "The GitHub MP3 is a Git LFS pointer, not the actual audio file."
+        )
+      );
+    } else {
+      showToast(
+        tr(
+          "audio 폴더에서 재생 가능한 MP3를 찾지 못했습니다. 파일 또는 GitHub Pages 배포 상태를 확인하세요.",
+          "No playable MP3 was found in the audio folder. Check the file and GitHub Pages deployment."
+        )
+      );
+    }
   }
 }
 
@@ -3586,7 +3785,7 @@ function pauseBgm() {
 
   stopBgmSegmentMonitor();
   state.bgmEnabled = false;
-  updateBgmButton();
+  syncBgmControls();
 }
 
 async function toggleBgm() {
@@ -3598,8 +3797,13 @@ async function toggleBgm() {
   await playSelectedBgm(false);
 }
 
-async function changeBgmTrack() {
-  const index = Number(el("bgmTrackSelect").value);
+async function changeBgmTrack(event = null) {
+  const sourceSelect =
+    event?.currentTarget ||
+    event?.target ||
+    el("bgmTrackSelect");
+
+  const index = Number(sourceSelect.value);
 
   if (
     !Number.isInteger(index) ||
@@ -3616,11 +3820,12 @@ async function changeBgmTrack() {
     String(index)
   );
 
-  // Selecting a song means: jump to that timestamp in the one combined MP3
-  // and start playing immediately.
+  allBgmTrackSelects().forEach(select => {
+    select.value = String(index);
+  });
+
   await playSelectedBgm(true);
 }
-
 
 async function loadMessages() {
   if (!state.activeRoom) return;
@@ -3640,26 +3845,56 @@ async function loadMessages() {
   state.messages = data || [];
 }
 
-function renderChat() {
-  const container = el("chatMessages");
+function renderRoomChatInto(messagesId, countId) {
+  const container = el(messagesId);
+  const counter = el(countId);
+
+  if (!container || !counter) return;
+
   container.innerHTML = "";
 
   if (!state.messages.length) {
-    container.innerHTML = `<div class="chat-empty">${tr("아직 메시지가 없습니다.", "No messages yet.")}</div>`;
+    container.innerHTML =
+      `<div class="chat-empty">${
+        tr("아직 메시지가 없습니다.", "No messages yet.")
+      }</div>`;
   } else {
     state.messages.forEach(message => {
       const item = document.createElement("div");
-      item.className = `chat-message ${isEmojiOnlyMessage(message.body) ? "emoji-only" : ""}`;
+
+      item.className =
+        `chat-message ${
+          isEmojiOnlyMessage(message.body)
+            ? "emoji-only"
+            : ""
+        }`;
+
       item.innerHTML = `
         <strong>${escapeHTML(message.sender_name)}</strong>
         <p>${escapeHTML(message.body)}</p>
       `;
+
       container.appendChild(item);
     });
   }
 
-  el("chatCount").textContent = state.messages.length;
+  counter.textContent = state.messages.length;
   container.scrollTop = container.scrollHeight;
+}
+
+function renderChat() {
+  renderRoomChatInto("chatMessages", "chatCount");
+  renderRoomChatInto("lobbyChatMessages", "lobbyChatCount");
+}
+async function sendRoomChatBody(body) {
+  if (!state.activeRoom || !body) return;
+
+  const { error } = await db.rpc("send_room_message", {
+    p_room_id: state.activeRoom.id,
+    p_body: body
+  });
+
+  if (error) throw error;
 }
 
 async function sendChat(event) {
@@ -3673,16 +3908,50 @@ async function sendChat(event) {
   input.value = "";
 
   try {
-    const { error } = await db.rpc("send_room_message", {
-      p_room_id: state.activeRoom.id,
-      p_body: body
-    });
-
-    if (error) throw error;
+    await sendRoomChatBody(body);
   } catch (error) {
     console.error(error);
-    showToast(error.message || tr("메시지를 보내지 못했습니다.", "Could not send the message."));
+    showToast(
+      error.message ||
+      tr("메시지를 보내지 못했습니다.", "Could not send the message.")
+    );
   }
+}
+
+async function sendLobbyChat(event) {
+  event.preventDefault();
+  if (!state.activeRoom) return;
+
+  const input = el("lobbyChatInput");
+  const body = input.value.trim();
+  if (!body) return;
+
+  input.value = "";
+
+  try {
+    await sendRoomChatBody(body);
+  } catch (error) {
+    console.error(error);
+    showToast(
+      error.message ||
+      tr("메시지를 보내지 못했습니다.", "Could not send the message.")
+    );
+  }
+}
+
+function initLobbyEmojiPicker() {
+  const picker = el("lobbyEmojiPicker");
+
+  picker.innerHTML = CHAT_EMOJIS
+    .map(
+      emoji =>
+        `<button type="button" class="emoji-option" data-lobby-emoji="${emoji}">${emoji}</button>`
+    )
+    .join("");
+}
+
+function toggleLobbyEmojiPicker() {
+  el("lobbyEmojiPicker").classList.toggle("hidden");
 }
 
 async function showGameOver() {
@@ -4182,12 +4451,35 @@ document.addEventListener("click", event => {
   ) {
     el("globalEmojiPicker").classList.add("hidden");
   }
+
+  if (
+    !event.target.closest("#lobbyEmojiPicker") &&
+    !event.target.closest("#lobbyEmojiToggleBtn")
+  ) {
+    el("lobbyEmojiPicker").classList.add("hidden");
+  }
 });
 
 el("bgmToggleBtn").addEventListener("click", toggleBgm);
+el("lobbyBgmToggleBtn").addEventListener("click", toggleBgm);
+
 el("bgmTrackSelect").addEventListener("change", changeBgmTrack);
+el("lobbyBgmTrackSelect").addEventListener("change", changeBgmTrack);
 
 el("chatForm").addEventListener("submit", sendChat);
+el("lobbyChatForm").addEventListener("submit", sendLobbyChat);
+
+el("lobbyEmojiToggleBtn").addEventListener(
+  "click",
+  toggleLobbyEmojiPicker
+);
+
+el("lobbyEmojiPicker").addEventListener("click", event => {
+  const button = event.target.closest("[data-lobby-emoji]");
+  if (!button) return;
+
+  sendRoomEmoji(button.dataset.lobbyEmoji);
+});
 el("leaveGameBtn").addEventListener("click", leaveGameScreen);
 el("finishGameBtn").addEventListener("click", leaveGameScreen);
 
@@ -4200,6 +4492,7 @@ window.addEventListener("beforeunload", () => {
 });
 
 initEmojiPicker();
+initLobbyEmojiPicker();
 initGlobalEmojiPicker();
 initBgmControls();
 applyLanguage({ rerender: false });
