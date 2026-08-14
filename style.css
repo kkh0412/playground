@@ -3344,3 +3344,50 @@ body.spectator-mode #rollBtn {
     width: min(100%, 290px);
   }
 }
+
+
+/* ============================================================
+   Demo v22 — home hero layout adjustment
+   ============================================================ */
+
+.hero-panel {
+  grid-template-columns: 0.9fr 1.15fr 0.62fr;
+  align-items: center;
+}
+
+.hero-copy-panel {
+  min-width: 0;
+}
+
+.hero-art-panel {
+  justify-content: flex-start;
+}
+
+.hero-goat-image {
+  width: min(100%, 320px);
+}
+
+.hero-stats {
+  grid-template-columns: 1fr;
+  align-self: center;
+}
+
+@media (max-width: 980px) {
+  .hero-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-art-panel {
+    order: 1;
+    justify-content: center;
+  }
+
+  .hero-copy-panel {
+    order: 2;
+  }
+
+  .hero-stats {
+    order: 3;
+    grid-template-columns: 1fr;
+  }
+}
