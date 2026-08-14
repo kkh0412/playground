@@ -1298,3 +1298,348 @@ input:focus {
     flex-direction: column;
   }
 }
+
+
+/* ============================================================
+   Demo v4: public rooms, 3D dice, admin console
+   ============================================================ */
+
+.brand {
+  max-width: 100%;
+}
+
+.brand-mark {
+  font-size: 18px;
+}
+
+.visibility-picker {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.visibility-btn {
+  display: grid;
+  gap: 3px;
+  padding: 12px 13px;
+  border: 1px solid #dfe3ea;
+  border-radius: 12px;
+  background: white;
+  color: #475467;
+  text-align: left;
+}
+
+.visibility-btn strong {
+  font-size: 13px;
+}
+
+.visibility-btn small {
+  color: #98a2b3;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.visibility-btn.active {
+  border-color: var(--purple);
+  background: var(--purple-soft);
+  color: var(--purple-dark);
+  box-shadow: 0 0 0 3px rgba(109, 74, 255, 0.07);
+}
+
+.public-rooms-panel {
+  margin-top: 18px;
+  padding: 26px;
+}
+
+.public-room-list {
+  display: grid;
+  gap: 9px;
+}
+
+.public-room-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 18px;
+  padding: 15px 16px;
+  border: 1px solid #e8eaf0;
+  border-radius: 14px;
+  background: #fbfbfd;
+}
+
+.public-room-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+
+.public-room-title strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+}
+
+.public-room-main small {
+  color: #98a2b3;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.public-room-side {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.public-room-side > strong {
+  min-width: 42px;
+  color: #475467;
+  font-size: 12px;
+  text-align: right;
+}
+
+.room-code-line {
+  margin: 5px 0 0;
+  color: #98a2b3;
+  font-size: 11px;
+}
+
+.room-code-line strong {
+  color: #475467;
+  letter-spacing: .08em;
+}
+
+/* 3D dice */
+.dice-area {
+  perspective: 950px;
+  align-items: center;
+}
+
+.die.die-3d {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.die.die-3d:hover:not(:disabled) {
+  transform: translateY(-2px);
+  border-color: transparent;
+}
+
+.die-scene {
+  position: relative;
+  display: block;
+  width: clamp(52px, 6vw, 72px);
+  height: clamp(52px, 6vw, 72px);
+  perspective: 520px;
+}
+
+.die-cube {
+  --die-half: clamp(26px, 3vw, 36px);
+  position: absolute;
+  inset: 0;
+  display: block;
+  transform-style: preserve-3d;
+  transition: transform .28s ease;
+  will-change: transform;
+}
+
+.cube-face {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border: 2px solid #d9dee7;
+  border-radius: 13px;
+  background:
+    radial-gradient(circle at 30% 20%, rgba(255,255,255,.96), rgba(244,246,249,.96));
+  color: #182230;
+  box-shadow:
+    inset 0 0 18px rgba(15, 23, 42, 0.05),
+    0 5px 12px rgba(15, 23, 42, 0.08);
+  font-size: clamp(36px, 5vw, 52px);
+  line-height: 1;
+  backface-visibility: hidden;
+}
+
+.cube-front  { transform: rotateY(0deg) translateZ(var(--die-half)); }
+.cube-back   { transform: rotateY(180deg) translateZ(var(--die-half)); }
+.cube-right  { transform: rotateY(90deg) translateZ(var(--die-half)); }
+.cube-left   { transform: rotateY(-90deg) translateZ(var(--die-half)); }
+.cube-top    { transform: rotateX(90deg) translateZ(var(--die-half)); }
+.cube-bottom { transform: rotateX(-90deg) translateZ(var(--die-half)); }
+
+.die.held .cube-face {
+  border-color: #8f78ff;
+  background: #f0ebff;
+  box-shadow:
+    inset 0 0 18px rgba(109, 74, 255, 0.08),
+    0 6px 18px rgba(109, 74, 255, 0.12);
+}
+
+.die.held::after {
+  content: none;
+}
+
+.die-hold-label {
+  min-height: 12px;
+  margin-top: 8px;
+  color: var(--purple);
+  font-size: 8px;
+  font-weight: 950;
+  letter-spacing: .08em;
+}
+
+.die.die-3d:disabled {
+  opacity: 1;
+}
+
+.die.die-3d:disabled:not(.held) .die-cube {
+  filter: saturate(.75);
+}
+
+/* Admin */
+.admin-shell {
+  width: min(1380px, calc(100% - 36px));
+  margin: 0 auto;
+  padding: 52px 0 72px;
+}
+
+.admin-title-row {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.admin-title-row h1 {
+  font-size: clamp(38px, 6vw, 56px);
+}
+
+.admin-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.admin-stat {
+  padding: 18px;
+}
+
+.admin-stat span {
+  display: block;
+  color: #667085;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.admin-stat strong {
+  display: block;
+  margin-top: 5px;
+  font-size: 26px;
+}
+
+.admin-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.admin-card {
+  min-width: 0;
+  padding: 22px;
+}
+
+.admin-table-wrap {
+  max-height: 460px;
+  overflow: auto;
+  border: 1px solid #edf0f4;
+  border-radius: 12px;
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.admin-table th,
+.admin-table td {
+  padding: 10px 11px;
+  border-bottom: 1px solid #edf0f4;
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.admin-table td:nth-child(3) {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.admin-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f8f9fb;
+  color: #667085;
+  font-size: 9px;
+  letter-spacing: .04em;
+}
+
+.admin-table tr:last-child td {
+  border-bottom: 0;
+}
+
+@media (max-width: 980px) {
+  .admin-summary-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .admin-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 580px) {
+  .visibility-picker,
+  .public-room-row {
+    grid-template-columns: 1fr;
+  }
+
+  .public-room-side {
+    justify-content: space-between;
+  }
+
+  .admin-title-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .admin-summary-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .die-scene {
+    width: 48px;
+    height: 48px;
+  }
+
+  .die-cube {
+    --die-half: 24px;
+  }
+
+  .cube-face {
+    border-radius: 10px;
+    font-size: 34px;
+  }
+}

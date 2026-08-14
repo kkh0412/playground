@@ -31,6 +31,9 @@ const categories = [
 const state = {
   page: "home",
   maxPlayers: 4,
+  roomIsPublic: true,
+  publicRooms: [],
+  publicRoomPoller: null,
   session: null,
   profile: null,
   activeRoom: null,
@@ -41,6 +44,8 @@ const state = {
   presenceChannel: null,
   roomChannel: null,
   roomChannelRoomId: null,
+  diceAnimating: false,
+  adminData: null,
   toastTimer: null,
   busy: false
 };
@@ -51,7 +56,8 @@ const pages = {
   home: el("page-home"),
   account: el("page-account"),
   lobby: el("page-lobby"),
-  game: el("page-game")
+  game: el("page-game"),
+  admin: el("page-admin")
 };
 
 function escapeHTML(value) {
@@ -119,10 +125,19 @@ function currentUsername() {
   return state.profile?.username || "게스트";
 }
 
+function isAdmin() {
+  return state.profile?.role === "admin";
+}
+
 function navigate(page) {
   if ((page === "lobby" || page === "game") && !isLoggedIn()) {
     page = "account";
     showToast("온라인 게임은 로그인 후 이용할 수 있습니다.");
+  }
+
+  if (page === "admin" && !isAdmin()) {
+    page = "home";
+    showToast("관리자 권한이 필요합니다.");
   }
 
   state.page = page;
@@ -135,9 +150,12 @@ function navigate(page) {
     btn.classList.toggle("active", btn.dataset.nav === page);
   });
 
+  if (page !== "lobby") stopPublicRoomPolling();
+
   if (page === "home") refreshHome();
   if (page === "account") renderAccount();
   if (page === "lobby") refreshLobby();
+  if (page === "admin") renderAdmin();
   if (page === "game") {
     if (!state.activeRoom || state.activeRoom.status !== "playing") {
       navigate("lobby");
@@ -153,6 +171,7 @@ function navigate(page) {
 function renderHeader() {
   el("headerUserText").textContent = currentUsername();
   el("headerAccountBtn").textContent = isLoggedIn() ? "프로필" : "로그인";
+  el("adminNavBtn").classList.toggle("hidden", !isAdmin());
 }
 
 function setConnectionBadge(ok, text) {
@@ -182,7 +201,7 @@ async function init() {
     renderAccount();
     await refreshHome();
 
-    if (!session && (state.page === "lobby" || state.page === "game")) {
+    if (!session && (state.page === "lobby" || state.page === "game" || state.page === "admin")) {
       cleanupRoomChannel();
       navigate("account");
     }
@@ -379,7 +398,7 @@ async function loadProfile() {
 
   let { data, error } = await db
     .from("profiles")
-    .select("id, username, wins, losses, draws")
+    .select("id, username, wins, losses, draws, role")
     .eq("id", currentUserId())
     .maybeSingle();
 
@@ -394,7 +413,7 @@ async function loadProfile() {
 
     const retry = await db
       .from("profiles")
-      .select("id, username, wins, losses, draws")
+      .select("id, username, wins, losses, draws, role")
       .eq("id", currentUserId())
       .maybeSingle();
 
@@ -445,7 +464,7 @@ function roomErrorMessage(error) {
     message.includes("schema cache") ||
     message.includes("ensure_my_profile")
   ) {
-    return "Supabase의 방 생성 함수가 설치되지 않았습니다. supabase_room_fix.sql을 실행해 주세요.";
+    return "Supabase의 방 생성 함수가 설치되지 않았습니다. supabase_demo_v4.sql을 실행해 주세요.";
   }
 
   if (
@@ -578,7 +597,9 @@ async function refreshActiveRoom() {
     code: row.room_code,
     status: row.room_status,
     maxPlayers: row.max_players,
-    hostId: row.host_id
+    hostId: row.host_id,
+    name: row.room_name || "Yacht Dice",
+    isPublic: Boolean(row.is_public)
   } : null;
 
   return state.activeRoom;
@@ -591,17 +612,28 @@ async function refreshLobby() {
 
   const hasRoom = Boolean(state.activeRoom);
   el("lobbyActions").classList.toggle("hidden", hasRoom);
+  el("publicRoomsPanel").classList.toggle("hidden", hasRoom);
   el("activeRoomPanel").classList.toggle("hidden", !hasRoom);
 
   document.querySelectorAll(".count-btn").forEach(button => {
     button.classList.toggle("active", Number(button.dataset.count) === state.maxPlayers);
   });
 
+  document.querySelectorAll(".visibility-btn").forEach(button => {
+    button.classList.toggle(
+      "active",
+      (button.dataset.public === "true") === state.roomIsPublic
+    );
+  });
+
   if (!hasRoom) {
     cleanupRoomChannel();
+    await refreshPublicRooms();
+    startPublicRoomPolling();
     return;
   }
 
+  stopPublicRoomPolling();
   await subscribeRoom(state.activeRoom.id);
   await loadRoomPlayers();
   renderActiveRoom();
@@ -631,8 +663,16 @@ async function createRoom() {
   try {
     await ensureProfileReady();
 
+    const roomName = el("roomNameInput").value.trim() || `${currentUsername()}의 방`;
+
+    if (roomName.length > 32) {
+      throw new Error("방 이름은 32자 이하로 입력하세요.");
+    }
+
     const { data, error } = await db.rpc("create_yacht_room", {
-      p_max_players: state.maxPlayers
+      p_max_players: state.maxPlayers,
+      p_room_name: roomName,
+      p_is_public: state.roomIsPublic
     });
 
     if (error) throw error;
@@ -648,7 +688,9 @@ async function createRoom() {
       code: row.room_code,
       status: "waiting",
       maxPlayers: state.maxPlayers,
-      hostId: currentUserId()
+      hostId: currentUserId(),
+      name: roomName,
+      isPublic: state.roomIsPublic
     };
 
     showToast(`방 ${row.room_code}이 생성되었습니다.`);
@@ -669,35 +711,106 @@ async function createRoom() {
 
 async function joinRoom(event) {
   event.preventDefault();
-  if (state.busy) return;
-
   const code = el("roomCodeInput").value.trim().toUpperCase();
+  const joined = await joinRoomByCode(code);
+  if (joined) el("joinRoomForm").reset();
+}
+
+async function joinRoomByCode(code) {
+  if (state.busy) return false;
+
   if (!/^[A-F0-9]{6}$/.test(code)) {
     showToast("6자리 방 코드를 입력하세요.");
-    return;
+    return false;
   }
 
   state.busy = true;
 
   try {
     await ensureProfileReady();
-  
+
     const { error } = await db.rpc("join_yacht_room", {
       p_room_code: code
     });
 
     if (error) throw error;
 
-    el("joinRoomForm").reset();
     showToast("방에 입장했습니다.");
     await refreshLobby();
+    return true;
   } catch (error) {
     console.error(error);
     showToast(
       roomErrorMessage(error).replace("방을 만들지", "방에 입장하지")
     );
+    return false;
   } finally {
     state.busy = false;
+  }
+}
+
+async function refreshPublicRooms() {
+  if (!isLoggedIn() || state.activeRoom) return;
+
+  const { data, error } = await db.rpc("list_public_yacht_rooms");
+
+  if (error) {
+    console.error("public rooms:", error);
+    el("publicRoomsList").innerHTML =
+      `<div class="empty-state"><span>공개방 목록을 불러오지 못했습니다.</span></div>`;
+    return;
+  }
+
+  state.publicRooms = data || [];
+  renderPublicRooms();
+}
+
+function renderPublicRooms() {
+  const container = el("publicRoomsList");
+  container.innerHTML = "";
+
+  if (!state.publicRooms.length) {
+    container.innerHTML =
+      `<div class="empty-state"><span>현재 입장 가능한 공개방이 없습니다.</span></div>`;
+    return;
+  }
+
+  state.publicRooms.forEach(room => {
+    const card = document.createElement("article");
+    card.className = "public-room-row";
+    const full = Number(room.player_count) >= Number(room.max_players);
+
+    card.innerHTML = `
+      <div class="public-room-main">
+        <div class="public-room-title">
+          <strong>${escapeHTML(room.room_name)}</strong>
+          <span class="demo-badge">PUBLIC</span>
+        </div>
+        <small>HOST ${escapeHTML(room.host_username)} · 방 코드 ${escapeHTML(room.room_code)}</small>
+      </div>
+      <div class="public-room-side">
+        <strong>${room.player_count} / ${room.max_players}</strong>
+        <button class="primary-btn public-join-btn" data-code="${escapeHTML(room.room_code)}" ${full ? "disabled" : ""}>
+          ${full ? "가득 참" : "참여"}
+        </button>
+      </div>
+    `;
+
+    container.appendChild(card);
+  });
+}
+
+function startPublicRoomPolling() {
+  stopPublicRoomPolling();
+  state.publicRoomPoller = setInterval(() => {
+    if (state.page === "lobby" && !state.activeRoom) refreshPublicRooms();
+  }, 5000);
+}
+
+function stopPublicRoomPolling() {
+  if (state.publicRoomPoller) {
+    clearInterval(state.publicRoomPoller);
+    state.publicRoomPoller = null;
   }
 }
 
@@ -728,8 +841,10 @@ function renderActiveRoom() {
   const room = state.activeRoom;
   const isHost = room.hostId === currentUserId();
 
+  el("activeRoomName").textContent = room.name || "Yacht Dice";
   el("roomCodeText").textContent = room.code;
   el("roomStatusBadge").textContent = room.status.toUpperCase();
+  el("roomVisibilityText").textContent = room.isPublic ? "공개방" : "비공개방";
   el("roomCapacityText").textContent =
     `${state.roomPlayers.length} / ${room.maxPlayers}명`;
 
@@ -817,7 +932,9 @@ async function subscribeRoom(roomId) {
             status: payload.new.status,
             code: payload.new.code,
             maxPlayers: payload.new.max_players,
-            hostId: payload.new.host_id
+            hostId: payload.new.host_id,
+            name: payload.new.name || state.activeRoom?.name || "Yacht Dice",
+            isPublic: Boolean(payload.new.is_public)
           };
         }
         await handleRoomRefresh();
@@ -867,7 +984,7 @@ async function handleRoomRefresh() {
   const roomId = state.activeRoom.id;
   const { data: room, error } = await db
     .from("rooms")
-    .select("id, code, status, max_players, host_id")
+    .select("id, code, name, is_public, status, max_players, host_id")
     .eq("id", roomId)
     .maybeSingle();
 
@@ -890,7 +1007,9 @@ async function handleRoomRefresh() {
     code: room.code,
     status: room.status,
     maxPlayers: room.max_players,
-    hostId: room.host_id
+    hostId: room.host_id,
+    name: room.name || "Yacht Dice",
+    isPublic: Boolean(room.is_public)
   };
 
   await loadRoomPlayers();
@@ -979,6 +1098,7 @@ function totalFor(userId) {
 function renderGame() {
   if (!state.gameState) return;
 
+  el("gameRoomName").textContent = state.activeRoom?.name || "Yacht Dice";
   el("gameRoomCode").textContent = state.activeRoom?.code || "------";
 
   renderPlayerStrip();
@@ -1005,18 +1125,58 @@ function renderPlayerStrip() {
   });
 }
 
+const DIE_FACE_TRANSFORMS = {
+  1: { x: 0, y: 0 },
+  2: { x: -90, y: 0 },
+  3: { x: 0, y: -90 },
+  4: { x: 0, y: 90 },
+  5: { x: 90, y: 0 },
+  6: { x: 0, y: 180 }
+};
+
+const DIE_GLYPHS = ["⚀", "⚁", "⚂", "⚃", "⚄", "⚅"];
+
+function cubeFaceMarkup() {
+  return `
+    <span class="cube-face cube-front">${DIE_GLYPHS[0]}</span>
+    <span class="cube-face cube-back">${DIE_GLYPHS[5]}</span>
+    <span class="cube-face cube-right">${DIE_GLYPHS[2]}</span>
+    <span class="cube-face cube-left">${DIE_GLYPHS[3]}</span>
+    <span class="cube-face cube-top">${DIE_GLYPHS[1]}</span>
+    <span class="cube-face cube-bottom">${DIE_GLYPHS[4]}</span>
+  `;
+}
+
+function faceTransform(value, extraX = 0, extraY = 0, extraZ = 0) {
+  const base = DIE_FACE_TRANSFORMS[value] || DIE_FACE_TRANSFORMS[1];
+  return `rotateX(${base.x + extraX}deg) rotateY(${base.y + extraY}deg) rotateZ(${extraZ}deg)`;
+}
+
 function renderDice() {
   const area = el("diceArea");
   area.innerHTML = "";
 
   (state.gameState.dice || [1, 1, 1, 1, 1]).forEach((value, index) => {
     const button = document.createElement("button");
-    button.className = `die ${state.gameState.held?.[index] ? "held" : ""}`;
-    button.textContent = value;
-    button.disabled = !isMyTurn() || !state.gameState.has_rolled || state.gameState.finished;
+    button.className = `die die-3d ${state.gameState.held?.[index] ? "held" : ""}`;
+    button.disabled =
+      !isMyTurn() ||
+      !state.gameState.has_rolled ||
+      state.gameState.finished ||
+      state.diceAnimating;
+    button.setAttribute("aria-label", `${index + 1}번째 주사위: ${value}`);
+
+    button.innerHTML = `
+      <span class="die-scene">
+        <span class="die-cube" data-index="${index}" style="transform:${faceTransform(value)}">
+          ${cubeFaceMarkup()}
+        </span>
+      </span>
+      <span class="die-hold-label">${state.gameState.held?.[index] ? "HOLD" : ""}</span>
+    `;
 
     button.addEventListener("click", async () => {
-      if (!isMyTurn() || state.busy) return;
+      if (!isMyTurn() || state.busy || state.diceAnimating) return;
       state.busy = true;
       try {
         const { error } = await db.rpc("toggle_yacht_hold", {
@@ -1034,6 +1194,57 @@ function renderDice() {
 
     area.appendChild(button);
   });
+}
+
+async function animateDiceRoll(targetValues, heldBefore = []) {
+  const cubes = [...el("diceArea").querySelectorAll(".die-cube")];
+  if (!cubes.length) {
+    renderDice();
+    return;
+  }
+
+  const animations = cubes.map((cube, index) => {
+    const value = targetValues[index] || 1;
+
+    if (heldBefore[index]) {
+      cube.style.transform = faceTransform(value);
+      return Promise.resolve();
+    }
+
+    const base = DIE_FACE_TRANSFORMS[value] || DIE_FACE_TRANSFORMS[1];
+    const spinX = 720 + Math.floor(Math.random() * 4) * 360;
+    const spinY = 720 + Math.floor(Math.random() * 4) * 360;
+    const spinZ = (Math.floor(Math.random() * 5) - 2) * 360;
+    const duration = 800 + Math.floor(Math.random() * 350);
+
+    const animation = cube.animate(
+      [
+        { transform: cube.style.transform || faceTransform(1), offset: 0 },
+        {
+          transform: `rotateX(${spinX * 0.45}deg) rotateY(${spinY * 0.5}deg) rotateZ(${spinZ * 0.35}deg)`,
+          offset: 0.45
+        },
+        {
+          transform: `rotateX(${base.x + spinX}deg) rotateY(${base.y + spinY}deg) rotateZ(${spinZ}deg)`,
+          offset: 1
+        }
+      ],
+      {
+        duration,
+        easing: "cubic-bezier(.16,.72,.22,1)",
+        fill: "forwards"
+      }
+    );
+
+    return animation.finished
+      .catch(() => {})
+      .then(() => {
+        animation.cancel();
+        cube.style.transform = faceTransform(value);
+      });
+  });
+
+  await Promise.all(animations);
 }
 
 function previewScore(category, dice) {
@@ -1084,7 +1295,8 @@ function renderScoreTable() {
       isMyTurn() &&
       state.gameState.has_rolled &&
       !used &&
-      !state.gameState.finished;
+      !state.gameState.finished &&
+      !state.diceAnimating;
 
     const preview = state.gameState.has_rolled
       ? previewScore(category.key, state.gameState.dice)
@@ -1128,7 +1340,8 @@ function renderGameHud() {
   rollBtn.disabled =
     !isMyTurn() ||
     state.gameState.rolls_left <= 0 ||
-    state.gameState.finished;
+    state.gameState.finished ||
+    state.diceAnimating;
 
   rollBtn.textContent = state.gameState.has_rolled ? "다시 굴리기" : "주사위 굴리기";
 
@@ -1145,19 +1358,36 @@ function renderGameHud() {
 }
 
 async function rollDice() {
-  if (!state.activeRoom || state.busy || !isMyTurn()) return;
+  if (!state.activeRoom || state.busy || !isMyTurn() || state.diceAnimating) return;
 
   state.busy = true;
+  state.diceAnimating = true;
+
+  const heldBefore = [...(state.gameState.held || [false, false, false, false, false])];
+  el("rollBtn").disabled = true;
+  el("statusText").textContent = "주사위가 굴러가는 중입니다...";
+
   try {
-    const { error } = await db.rpc("roll_yacht_dice", {
+    const { data, error } = await db.rpc("roll_yacht_dice", {
       p_room_id: state.activeRoom.id
     });
+
     if (error) throw error;
+
+    const targetValues = Array.isArray(data) ? data : null;
+    await loadGameData();
+
+    await animateDiceRoll(
+      targetValues || state.gameState.dice,
+      heldBefore
+    );
   } catch (error) {
     console.error(error);
     showToast(error.message || "주사위를 굴리지 못했습니다.");
   } finally {
+    state.diceAnimating = false;
     state.busy = false;
+    if (state.page === "game") renderGame();
   }
 }
 
@@ -1181,8 +1411,46 @@ async function chooseScore(category) {
 
 async function handleGameRefresh() {
   if (!state.activeRoom) return;
+
+  const previous = state.gameState
+    ? {
+        rolls_left: state.gameState.rolls_left,
+        current_seat: state.gameState.current_seat,
+        held: [...(state.gameState.held || [])]
+      }
+    : null;
+
   await loadGameData();
-  if (state.page === "game") renderGame();
+
+  if (state.page !== "game") return;
+
+  if (state.diceAnimating) {
+    renderPlayerStrip();
+    renderScoreTable();
+    renderGameHud();
+    renderChat();
+    return;
+  }
+
+  const remoteRollDetected =
+    previous &&
+    !state.diceAnimating &&
+    previous.current_seat === state.gameState.current_seat &&
+    state.gameState.rolls_left < previous.rolls_left &&
+    state.gameState.has_rolled;
+
+  if (remoteRollDetected) {
+    state.diceAnimating = true;
+    renderPlayerStrip();
+    renderScoreTable();
+    renderGameHud();
+
+    await animateDiceRoll(state.gameState.dice, previous.held);
+
+    state.diceAnimating = false;
+  }
+
+  renderGame();
 }
 
 async function loadMessages() {
@@ -1279,6 +1547,114 @@ async function showGameOver() {
   if (state.page === "account") await renderAccount();
 }
 
+
+async function renderAdmin() {
+  if (!isAdmin()) {
+    navigate("home");
+    return;
+  }
+
+  const summary = el("adminSummary");
+  summary.innerHTML =
+    `<article class="card admin-stat"><span>불러오는 중</span><strong>...</strong></article>`;
+
+  const { data, error } = await db.rpc("get_admin_dashboard");
+
+  if (error) {
+    console.error("admin dashboard:", error);
+    showToast("관리자 자료를 불러오지 못했습니다.");
+    return;
+  }
+
+  state.adminData = data || {};
+  renderAdminDashboard();
+}
+
+function renderAdminDashboard() {
+  const data = state.adminData || {};
+  const s = data.summary || {};
+
+  const metrics = [
+    ["전체 계정", s.total_accounts ?? 0],
+    ["대기방", s.waiting_rooms ?? 0],
+    ["진행 중", s.playing_rooms ?? 0],
+    ["완료 경기", s.finished_rooms ?? 0],
+    ["채팅", s.total_messages ?? 0],
+    ["경기 기록", s.total_matches ?? 0]
+  ];
+
+  el("adminSummary").innerHTML = metrics
+    .map(([label, value]) => `
+      <article class="card admin-stat">
+        <span>${label}</span>
+        <strong>${value}</strong>
+      </article>
+    `)
+    .join("");
+
+  el("adminUsers").innerHTML = adminTable(
+    ["아이디", "권한", "승", "패", "무"],
+    (data.users || []).map(user => [
+      user.username,
+      user.role,
+      user.wins,
+      user.losses,
+      user.draws
+    ])
+  );
+
+  el("adminRooms").innerHTML = adminTable(
+    ["방", "HOST", "공개", "상태", "인원"],
+    (data.rooms || []).map(room => [
+      room.name,
+      room.host_username,
+      room.is_public ? "공개" : "비공개",
+      room.status,
+      `${room.player_count}/${room.max_players}`
+    ])
+  );
+
+  el("adminMatches").innerHTML = adminTable(
+    ["사용자", "결과", "점수", "인원", "시간"],
+    (data.matches || []).map(match => [
+      match.username,
+      match.result,
+      match.score,
+      match.player_count,
+      new Date(match.created_at).toLocaleString("ko-KR")
+    ])
+  );
+
+  el("adminMessages").innerHTML = adminTable(
+    ["방", "사용자", "내용", "시간"],
+    (data.messages || []).map(message => [
+      message.room_name,
+      message.sender_name,
+      message.body,
+      new Date(message.created_at).toLocaleString("ko-KR")
+    ])
+  );
+}
+
+function adminTable(headers, rows) {
+  if (!rows.length) {
+    return `<div class="empty-state"><span>표시할 자료가 없습니다.</span></div>`;
+  }
+
+  return `
+    <table class="admin-table">
+      <thead>
+        <tr>${headers.map(header => `<th>${escapeHTML(header)}</th>`).join("")}</tr>
+      </thead>
+      <tbody>
+        ${rows.map(row => `
+          <tr>${row.map(cell => `<td>${escapeHTML(cell)}</td>`).join("")}</tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
 async function copyRoomCode() {
   if (!state.activeRoom) return;
   try {
@@ -1319,6 +1695,26 @@ document.querySelectorAll(".count-btn").forEach(button => {
   });
 });
 
+document.querySelectorAll(".visibility-btn").forEach(button => {
+  button.addEventListener("click", () => {
+    state.roomIsPublic = button.dataset.public === "true";
+    document.querySelectorAll(".visibility-btn").forEach(btn => {
+      btn.classList.toggle(
+        "active",
+        (btn.dataset.public === "true") === state.roomIsPublic
+      );
+    });
+  });
+});
+
+el("publicRoomsList").addEventListener("click", event => {
+  const button = event.target.closest(".public-join-btn");
+  if (button && !button.disabled) joinRoomByCode(button.dataset.code);
+});
+
+el("refreshPublicRoomsBtn").addEventListener("click", refreshPublicRooms);
+el("refreshAdminBtn").addEventListener("click", renderAdmin);
+
 el("createRoomBtn").addEventListener("click", createRoom);
 el("joinRoomForm").addEventListener("submit", joinRoom);
 el("copyRoomCodeBtn").addEventListener("click", copyRoomCode);
@@ -1332,6 +1728,7 @@ el("leaveGameBtn").addEventListener("click", leaveGameScreen);
 el("finishGameBtn").addEventListener("click", leaveGameScreen);
 
 window.addEventListener("beforeunload", () => {
+  stopPublicRoomPolling();
   if (state.presenceChannel) state.presenceChannel.untrack();
 });
 
