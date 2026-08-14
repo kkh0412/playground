@@ -3430,14 +3430,18 @@ function selectedBgmTrack() {
   return BGM_TRACKS[state.bgmTrackIndex] || BGM_TRACKS[0];
 }
 
-function selectedBgmEnd(audio) {
-  const next = BGM_TRACKS[state.bgmTrackIndex + 1];
+function bgmTrackIndexForTime(currentTime) {
+  let index = 0;
 
-  if (next) return next.start;
+  for (let i = 0; i < BGM_TRACKS.length; i += 1) {
+    if (currentTime >= BGM_TRACKS[i].start) {
+      index = i;
+    } else {
+      break;
+    }
+  }
 
-  return Number.isFinite(audio.duration)
-    ? audio.duration
-    : Infinity;
+  return index;
 }
 
 function allBgmTrackSelects() {
@@ -3624,14 +3628,19 @@ function startBgmSegmentMonitor() {
       return;
     }
 
-    const track = selectedBgmTrack();
-    const end = selectedBgmEnd(audio);
+    const currentIndex = bgmTrackIndexForTime(audio.currentTime);
 
-    if (
-      audio.currentTime < track.start - 0.15 ||
-      audio.currentTime >= end - 0.025
-    ) {
-      audio.currentTime = track.start;
+    if (currentIndex !== state.bgmTrackIndex) {
+      state.bgmTrackIndex = currentIndex;
+
+      localStorage.setItem(
+        "playground_bgm_track",
+        String(currentIndex)
+      );
+
+      allBgmTrackSelects().forEach(select => {
+        select.value = String(currentIndex);
+      });
     }
 
     state.bgmSegmentMonitor = requestAnimationFrame(tick);
@@ -3639,7 +3648,6 @@ function startBgmSegmentMonitor() {
 
   state.bgmSegmentMonitor = requestAnimationFrame(tick);
 }
-
 function populateBgmTrackSelect(select) {
   select.innerHTML = BGM_TRACKS
     .map(
@@ -3670,14 +3678,9 @@ function initBgmControls() {
   audio.preload = "metadata";
 
   audio.addEventListener("ended", () => {
-    if (!state.bgmEnabled) return;
-
-    const track = selectedBgmTrack();
-    audio.currentTime = track.start;
-
-    audio.play()
-      .then(startBgmSegmentMonitor)
-      .catch(() => {});
+    stopBgmSegmentMonitor();
+    state.bgmEnabled = false;
+    syncBgmControls();
   });
 
   syncBgmControls();
@@ -3743,12 +3746,15 @@ async function playSelectedBgm(restart = false) {
 
     await waitForAudioMetadata(audio);
 
-    const end = selectedBgmEnd(audio);
-    const outsideSelectedTrack =
-      audio.currentTime < track.start ||
-      audio.currentTime >= end;
-
-    if (restart || outsideSelectedTrack) {
+    if (restart) {
+      audio.currentTime = track.start;
+    } else if (
+      audio.currentTime < BGM_TRACKS[0].start ||
+      (
+        Number.isFinite(audio.duration) &&
+        audio.currentTime >= audio.duration
+      )
+    ) {
       audio.currentTime = track.start;
     }
 

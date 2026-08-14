@@ -3273,3 +3273,16 @@ body.spectator-mode #rollBtn {
     width: min(100%, 245px);
   }
 }
+
+
+/* ============================================================
+   Demo v17 — remove BGM dropdown chevron
+   ============================================================ */
+
+.polished-bgm-select {
+  padding-right: 12px !important;
+}
+
+.bgm-select-chevron {
+  display: none !important;
+}
