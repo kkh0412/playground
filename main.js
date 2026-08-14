@@ -9,6 +9,74 @@ const IS_CONFIGURED =
   !SUPABASE_URL.includes("PASTE_") &&
   !SUPABASE_PUBLISHABLE_KEY.includes("PASTE_");
 
+const AUTH_SESSION_MIRROR_PREFIX = "playground_auth_mirror::";
+
+const playgroundAuthStorage = {
+  getItem(key) {
+    let value = null;
+
+    try {
+      value = window.localStorage.getItem(key);
+    } catch {}
+
+    if (value !== null) {
+      try {
+        window.sessionStorage.setItem(
+          `${AUTH_SESSION_MIRROR_PREFIX}${key}`,
+          value
+        );
+      } catch {}
+
+      return value;
+    }
+
+    try {
+      return window.sessionStorage.getItem(
+        `${AUTH_SESSION_MIRROR_PREFIX}${key}`
+      );
+    } catch {
+      return null;
+    }
+  },
+
+  setItem(key, value) {
+    let saved = false;
+
+    try {
+      window.localStorage.setItem(key, value);
+      saved = true;
+    } catch (error) {
+      console.error("auth localStorage write:", error);
+    }
+
+    try {
+      window.sessionStorage.setItem(
+        `${AUTH_SESSION_MIRROR_PREFIX}${key}`,
+        value
+      );
+      saved = true;
+    } catch (error) {
+      console.error("auth sessionStorage write:", error);
+    }
+
+    if (!saved) {
+      throw new Error("브라우저에 로그인 세션을 저장할 수 없습니다.");
+    }
+  },
+
+  removeItem(key) {
+    try {
+      window.localStorage.removeItem(key);
+    } catch {}
+
+    try {
+      window.sessionStorage.removeItem(
+        `${AUTH_SESSION_MIRROR_PREFIX}${key}`
+      );
+    } catch {}
+  }
+};
+
 const db = IS_CONFIGURED
   ? window.supabase.createClient(
       SUPABASE_URL,
@@ -18,16 +86,14 @@ const db = IS_CONFIGURED
           persistSession: true,
           autoRefreshToken: true,
           detectSessionInUrl: true,
-          storage: window.localStorage
+          storage: playgroundAuthStorage
         }
       }
     )
   : null;
 
-const REFRESH_TOKEN_BACKUP_KEY = "playground_refresh_token_backup_v2";
-const PAGE_STORAGE_KEY = "playground_current_page_v2";
-const SPECTATOR_STORAGE_KEY = "playground_spectator_room_v2";
-
+const PAGE_STORAGE_KEY = "playground_current_page_v3";
+const SPECTATOR_STORAGE_KEY = "playground_spectator_room_v3";
 const UPPER_CATEGORY_KEYS = [
   "ones", "twos", "threes", "fours", "fives", "sixes"
 ];
@@ -201,82 +267,115 @@ async function usernameToInternalEmail(username) {
   return `u_${hash.slice(0, 40)}@playground.example.com`;
 }
 
-function saveRefreshTokenBackup(session) {
-  try {
-    if (session?.refresh_token) {
-      localStorage.setItem(
-        REFRESH_TOKEN_BACKUP_KEY,
-        session.refresh_token
-      );
-    }
-  } catch (error) {
-    console.error("refresh token backup:", error);
-  }
+let initialAuthResolved = false;
+let resolveInitialAuthSession = null;
+
+const initialAuthSessionPromise = new Promise(resolve => {
+  resolveInitialAuthSession = resolve;
+});
+
+let authListenerInstalled = false;
+let authSubscription = null;
+
+function resolveInitialSessionOnce(session) {
+  if (initialAuthResolved) return;
+
+  initialAuthResolved = true;
+  resolveInitialAuthSession(session || null);
 }
 
-function clearRefreshTokenBackup() {
-  try {
-    localStorage.removeItem(REFRESH_TOKEN_BACKUP_KEY);
-  } catch {}
-}
+function installAuthListener() {
+  if (authListenerInstalled || !db) return;
 
-async function getPersistedSession() {
-  // Normal browser path: Supabase restores its own localStorage session.
+  authListenerInstalled = true;
+
   const {
-    data: { session },
-    error
-  } = await db.auth.getSession();
+    data: { subscription }
+  } = db.auth.onAuthStateChange((event, session) => {
+    if (event === "INITIAL_SESSION") {
+      resolveInitialSessionOnce(session);
+    }
 
-  if (error) {
-    console.error("get persisted session:", error);
-  }
+    if (session) {
+      state.session = session;
+      renderHeader();
 
-  if (session) {
-    saveRefreshTokenBackup(session);
-    return session;
-  }
-
-  // Fallback: if the SDK's storage hydration missed the session, use only the
-  // latest refresh token. refreshSession returns a newly rotated token pair.
-  let refreshToken = null;
-
-  try {
-    refreshToken = localStorage.getItem(REFRESH_TOKEN_BACKUP_KEY);
-  } catch {}
-
-  if (!refreshToken) return null;
-
-  try {
-    const { data, error: refreshError } =
-      await db.auth.refreshSession({
-        refresh_token: refreshToken
-      });
-
-    if (refreshError) {
-      console.error("refresh persisted session:", refreshError);
-
-      const message = String(refreshError.message || "").toLowerCase();
+      // Keep this callback synchronous. Database/realtime work starts only
+      // after the Auth callback has returned.
       if (
-        message.includes("invalid refresh token") ||
-        message.includes("refresh token not found") ||
-        message.includes("already used")
+        event === "SIGNED_IN" ||
+        event === "TOKEN_REFRESHED" ||
+        event === "USER_UPDATED"
       ) {
-        clearRefreshTokenBackup();
+        window.setTimeout(() => {
+          syncAuthUi(event, session).catch(error => {
+            console.error("auth state sync failed:", error);
+          });
+        }, 0);
       }
 
-      return null;
+      return;
     }
 
-    if (data?.session) {
-      saveRefreshTokenBackup(data.session);
-      return data.session;
+    if (event !== "SIGNED_OUT") {
+      return;
     }
-  } catch (error) {
-    // Network failure is not a reason to erase a valid remembered login.
-    console.error("session refresh fallback:", error);
+
+    state.session = null;
+    state.profile = null;
+    stopAccountGuard();
+    stopAdminAutoRefresh();
+    cleanupRoomChannel();
+
+    renderHeader();
+    renderAccount();
+    setGlobalChatAvailability();
+    setFeedbackAvailability();
+
+    if (
+      state.page === "lobby" ||
+      state.page === "game" ||
+      state.page === "admin"
+    ) {
+      navigate("account");
+    }
+  });
+
+  authSubscription = subscription;
+}
+
+async function waitForInitialAuthSession() {
+  installAuthListener();
+
+  // Supabase documents INITIAL_SESSION as the storage-loaded initial state.
+  // A timeout fallback handles CDN/browser anomalies without changing storage.
+  const fallback = new Promise(resolve => {
+    window.setTimeout(async () => {
+      if (initialAuthResolved) return;
+
+      try {
+        const {
+          data: { session }
+        } = await db.auth.getSession();
+
+        resolveInitialSessionOnce(session);
+      } catch (error) {
+        console.error("initial session fallback:", error);
+        resolveInitialSessionOnce(null);
+      }
+
+      resolve(sessionFallbackValue());
+    }, 2500);
+  });
+
+  function sessionFallbackValue() {
+    return state.session || null;
   }
 
-  return null;
+  return Promise.race([
+    initialAuthSessionPromise,
+    fallback
+  ]);
 }
 
 function savedPage() {
@@ -438,8 +537,7 @@ async function checkOwnAccountStillExists() {
 
     stopAccountGuard();
     showToast("계정이 더 이상 존재하지 않아 로그아웃됩니다.");
-    clearRefreshTokenBackup();
-    await db.auth.signOut({ scope: "local" });
+        await db.auth.signOut({ scope: "local" });
   } catch (error) {
     console.error("account guard:", error);
   }
@@ -473,6 +571,7 @@ async function syncAuthUi(event, session) {
     await renderAccount();
     await refreshHome();
     await setupGlobalChat();
+    setFeedbackAvailability();
     updatePresence();
     return;
   }
@@ -486,6 +585,7 @@ async function syncAuthUi(event, session) {
   startAccountGuard();
   await refreshHome();
   await setupGlobalChat();
+  setFeedbackAvailability();
 
   updatePresence();
 }
@@ -496,8 +596,7 @@ async function applySignedInSession(session) {
   }
 
   state.session = session;
-  saveRefreshTokenBackup(session);
-
+  
   // Do not wait for the auth event callback to update the UI.
   await loadProfile();
 
@@ -591,7 +690,10 @@ async function init() {
   }
 
   const requestedPage = savedPage();
-  const session = await getPersistedSession();
+
+  // Install the listener before doing any application initialization.
+  // We then wait for Supabase's storage-backed INITIAL_SESSION.
+  const session = await waitForInitialAuthSession();
   state.session = session;
 
   if (session) {
@@ -599,63 +701,14 @@ async function init() {
     startAccountGuard();
   }
 
-  db.auth.onAuthStateChange((event, session) => {
-    // Never start Supabase API calls directly from this callback.
-    if (session) {
-      state.session = session;
-      saveRefreshTokenBackup(session);
-      renderHeader();
-
-      // TOKEN_REFRESHED may happen frequently; only persist it.
-      if (
-        event === "SIGNED_IN" ||
-        event === "USER_UPDATED"
-      ) {
-        window.setTimeout(() => {
-          syncAuthUi(event, session).catch(error => {
-            console.error("auth state sync failed:", error);
-          });
-        }, 0);
-      }
-
-      return;
-    }
-
-    // IMPORTANT: INITIAL_SESSION(null) is not treated as an explicit logout.
-    // A session may already have been restored by getPersistedSession().
-    if (event !== "SIGNED_OUT") {
-      return;
-    }
-
-    state.session = null;
-    state.profile = null;
-    stopAccountGuard();
-    stopAdminAutoRefresh();
-    cleanupRoomChannel();
-    clearRefreshTokenBackup();
-
-    renderHeader();
-    renderAccount();
-    setGlobalChatAvailability();
-
-    if (
-      state.page === "lobby" ||
-      state.page === "game" ||
-      state.page === "admin"
-    ) {
-      navigate("account");
-    }
-  });
-
   await initPresence();
   renderHeader();
   setConnectionBadge(true, "ONLINE");
   await refreshHome();
   await setupGlobalChat();
+  setFeedbackAvailability();
 
   if (session) {
-    // Clean stale database spectator rows once per full reload. If this tab
-    // was actually spectating, restoreInitialPage re-registers it below.
     await clearStaleSpectatorSession();
     await refreshActiveRoom();
   }
@@ -1078,7 +1131,6 @@ async function logout() {
   state.globalMessages = [];
   state.isSpectator = false;
   rememberSpectatorRoom(null);
-  clearRefreshTokenBackup();
   await db.auth.signOut({ scope: "local" });
   navigate("home");
 }
@@ -1960,7 +2012,7 @@ function shouldShowWaitingDice() {
 }
 
 function applySpinVariables(button, index) {
-  const duration = 760 + Math.floor(Math.random() * 420);
+  const duration = 1150 + Math.floor(Math.random() * 480);
   const delay = -Math.floor(Math.random() * duration);
   const x = 720 + Math.floor(Math.random() * 720);
   const y = 720 + Math.floor(Math.random() * 720);
@@ -2235,7 +2287,7 @@ async function animateDiceRoll(
 
     const sideways = randomBetween(-10, 10);
     const jump = randomBetween(14, 23);
-    const duration = 680 + Math.floor(Math.random() * 180);
+    const duration = 860 + Math.floor(Math.random() * 220);
     const delay = index * 28;
 
     const cubeAnimation = cube.animate(
@@ -2727,6 +2779,71 @@ async function handleGameRefresh() {
 }
 
 
+
+
+function setFeedbackAvailability() {
+  const enabled = isLoggedIn();
+
+  el("feedbackKind").disabled = !enabled;
+  el("feedbackBody").disabled = !enabled;
+  el("feedbackSubmitBtn").disabled = !enabled;
+  el("feedbackLoginHint").classList.toggle("hidden", enabled);
+
+  if (!enabled) {
+    el("feedbackBody").placeholder =
+      "로그인 후 개발자에게 피드백을 보낼 수 있습니다.";
+  } else {
+    el("feedbackBody").placeholder =
+      "개발자에게 전달할 내용을 입력하세요.";
+  }
+}
+
+function updateFeedbackCharCount() {
+  const length = el("feedbackBody").value.length;
+  el("feedbackCharCount").textContent = `${length} / 1000`;
+}
+
+async function submitFeedback(event) {
+  event.preventDefault();
+
+  if (!isLoggedIn()) {
+    navigate("account");
+    showToast("로그인 후 피드백을 보낼 수 있습니다.");
+    return;
+  }
+
+  const kind = el("feedbackKind").value;
+  const body = el("feedbackBody").value.trim();
+  const button = el("feedbackSubmitBtn");
+
+  if (!body) {
+    showToast("피드백 내용을 입력해 주세요.");
+    return;
+  }
+
+  button.disabled = true;
+  button.textContent = "보내는 중...";
+
+  try {
+    const { error } = await db.rpc("submit_feedback", {
+      p_kind: kind,
+      p_body: body
+    });
+
+    if (error) throw error;
+
+    el("feedbackBody").value = "";
+    updateFeedbackCharCount();
+    showToast("피드백을 개발자에게 보냈습니다.");
+  } catch (error) {
+    console.error("submit feedback:", error);
+    showToast(error.message || "피드백을 보내지 못했습니다.");
+  } finally {
+    button.disabled = false;
+    button.textContent = "피드백 보내기";
+    setFeedbackAvailability();
+  }
+}
 
 function initGlobalEmojiPicker() {
   const picker = el("globalEmojiPicker");
@@ -3268,6 +3385,7 @@ function renderAdminDashboard() {
     ["진행 중", s.playing_rooms ?? 0],
     ["완료 경기", s.finished_rooms ?? 0],
     ["채팅", s.total_messages ?? 0],
+    ["피드백", s.total_feedback ?? 0],
     ["경기 기록", s.total_matches ?? 0]
   ];
 
@@ -3302,6 +3420,23 @@ function renderAdminDashboard() {
       message.sender_name,
       message.body,
       new Date(message.created_at).toLocaleString("ko-KR")
+    ])
+  );
+
+  const feedbackKindLabels = {
+    bug: "버그",
+    feature: "기능 제안",
+    ui: "UI / 사용성",
+    other: "기타"
+  };
+
+  el("adminFeedback").innerHTML = adminTable(
+    ["종류", "사용자", "내용", "시간"],
+    (data.feedback || []).map(item => [
+      feedbackKindLabels[item.kind] || item.kind,
+      item.username || "삭제된 사용자",
+      item.body,
+      new Date(item.created_at).toLocaleString("ko-KR")
     ])
   );
 }
@@ -3573,6 +3708,9 @@ el("leaveRoomBtn").addEventListener("click", leaveWaitingRoom);
 
 el("rollBtn").addEventListener("click", rollDice);
 
+el("feedbackForm").addEventListener("submit", submitFeedback);
+el("feedbackBody").addEventListener("input", updateFeedbackCharCount);
+
 el("globalChatForm").addEventListener("submit", sendGlobalChat);
 el("globalEmojiToggleBtn").addEventListener("click", toggleGlobalEmojiPicker);
 el("globalEmojiPicker").addEventListener("click", event => {
@@ -3627,4 +3765,6 @@ initEmojiPicker();
 initGlobalEmojiPicker();
 initBgmControls();
 renderGlobalChat();
+updateFeedbackCharCount();
+setFeedbackAvailability();
 init();

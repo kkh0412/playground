@@ -2820,7 +2820,7 @@ body.spectator-mode #rollBtn {
   overflow: visible !important;
   animation:
     dice-continuous-bob
-    620ms
+    820ms
     ease-in-out
     var(--dice-bob-delay, 0ms)
     infinite
@@ -2878,4 +2878,117 @@ body.spectator-mode #rollBtn {
 /* Admin badge is a live status indicator. */
 .admin-auto-status:disabled {
   min-width: 158px;
+}
+
+
+/* ============================================================
+   Demo v11 — developer feedback
+   ============================================================ */
+
+.feedback-section {
+  margin-top: 34px;
+}
+
+.feedback-card {
+  display: grid;
+  gap: 18px;
+  padding: 24px;
+}
+
+.feedback-copy strong {
+  color: #182230;
+  font-size: 15px;
+}
+
+.feedback-copy p {
+  margin: 5px 0 0;
+  color: #667085;
+  font-size: 12px;
+}
+
+.feedback-form {
+  display: grid;
+  grid-template-columns: minmax(150px, .28fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.feedback-form label {
+  display: grid;
+  gap: 7px;
+  color: #475467;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.feedback-form select,
+.feedback-form textarea {
+  width: 100%;
+  border: 1px solid #d9dee7;
+  border-radius: 11px;
+  outline: none;
+  background: #fff;
+  color: #182230;
+  font: inherit;
+}
+
+.feedback-form select {
+  min-height: 43px;
+  padding: 9px 11px;
+}
+
+.feedback-form textarea {
+  min-height: 112px;
+  padding: 11px 12px;
+  resize: vertical;
+  line-height: 1.55;
+}
+
+.feedback-form select:focus,
+.feedback-form textarea:focus {
+  border-color: #9b8afb;
+  box-shadow: 0 0 0 4px rgba(109, 74, 255, .08);
+}
+
+.feedback-message-label {
+  grid-row: span 2;
+}
+
+.feedback-form-footer {
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+#feedbackCharCount {
+  color: #98a2b3;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.feedback-form :disabled {
+  opacity: .58;
+  cursor: default;
+}
+
+.admin-feedback-card {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 720px) {
+  .feedback-card {
+    padding: 17px;
+  }
+
+  .feedback-form {
+    grid-template-columns: 1fr;
+  }
+
+  .feedback-message-label,
+  .feedback-form-footer {
+    grid-row: auto;
+    grid-column: auto;
+  }
 }
