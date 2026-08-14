@@ -2415,3 +2415,347 @@ body.spectator-mode #rollBtn {
     grid-column: auto;
   }
 }
+
+
+/* ============================================================
+   Demo v8
+   - stable static dice outside roll animation
+   - room chat below dice/play panel
+   - compact all-player score sheets
+   ============================================================ */
+
+/* ---------- GAME LAYOUT ---------- */
+
+.game-layout {
+  grid-template-columns:
+    minmax(390px, .82fr)
+    minmax(610px, 1.48fr) !important;
+  grid-template-areas:
+    "play score"
+    "chat score";
+  gap: 14px;
+  align-items: start;
+}
+
+.play-panel {
+  grid-area: play;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.score-panel {
+  grid-area: score;
+  min-width: 0;
+}
+
+.chat-panel {
+  grid-area: chat;
+  position: static !important;
+  top: auto !important;
+  min-width: 0;
+  padding: 18px 22px;
+}
+
+.chat-panel .chat-messages {
+  height: 245px;
+}
+
+/* ---------- DICE ---------- */
+
+/*
+   Five dice must always fit inside the play card.
+   overflow: clip prevents a rolling cube from drawing over the score panel.
+*/
+#diceArea.dice-area {
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  align-items: center;
+  gap: 4px !important;
+  width: 100%;
+  min-width: 0;
+  margin: 14px 0 12px !important;
+  padding: 18px 3px 14px;
+  overflow: clip !important;
+  perspective: 1000px;
+}
+
+.dice3d-button {
+  width: 100%;
+  height: 92px;
+  min-width: 0;
+  overflow: hidden !important;
+  border-radius: 15px;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.dice3d-button:hover,
+.dice3d-button:focus,
+.dice3d-button:active {
+  background: transparent !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.dice3d-stage {
+  width: 100%;
+  max-width: 70px;
+  height: 72px;
+  transform: none !important;
+  filter: none !important;
+}
+
+/*
+   Normal display uses one flat face with the correct pips.
+   The full CSS cube is revealed only during .rolling.
+*/
+.dice3d-static-face {
+  --static-die-size: 56px;
+
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 4;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  width: var(--static-die-size);
+  height: var(--static-die-size);
+  padding: 8px;
+  border: 1px solid rgba(16, 24, 40, .14);
+  border-radius: 13px;
+  background:
+    radial-gradient(circle at 30% 18%, #ffffff 0 18%, transparent 44%),
+    linear-gradient(145deg, #ffffff, #f0f2f6);
+  box-shadow:
+    inset 1px 1px 0 rgba(255,255,255,.95),
+    inset -3px -4px 9px rgba(15,23,42,.08),
+    0 5px 12px rgba(15,23,42,.14);
+  transform: translate(-50%, -50%);
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: none;
+}
+
+.dice3d-button.held .dice3d-static-face {
+  border-color: rgba(109, 74, 255, .58);
+  background:
+    radial-gradient(circle at 30% 18%, #ffffff 0 18%, transparent 44%),
+    linear-gradient(145deg, #f9f7ff, #eae4ff);
+  box-shadow:
+    inset 1px 1px 0 rgba(255,255,255,.95),
+    inset -3px -4px 9px rgba(109,74,255,.10),
+    0 5px 13px rgba(109,74,255,.18);
+}
+
+.dice3d-button.held .dice3d-static-face .die-pip.active {
+  background:
+    radial-gradient(circle at 34% 28%, #8066ff 0 13%, #4c32d6 32% 100%);
+}
+
+/* Old visibility hotfix is intentionally overridden here. */
+#diceArea .dice3d-cube {
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none;
+}
+
+#diceArea .dice3d-button.rolling .dice3d-static-face {
+  visibility: hidden !important;
+  opacity: 0 !important;
+}
+
+#diceArea .dice3d-button.rolling .dice3d-cube {
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+#diceArea .dice3d-button.rolling {
+  overflow: visible !important;
+}
+
+.dice3d-cube {
+  --dice-size: 54px;
+}
+
+.dice3d-face {
+  padding: 7px;
+  border-radius: 12px;
+}
+
+.die-pip {
+  width: 8px;
+  height: 8px;
+}
+
+.dice3d-shadow {
+  bottom: 4px;
+  width: 46px;
+  height: 10px;
+}
+
+.dice3d-hold-label {
+  bottom: 0;
+}
+
+/* ---------- SCORE SHEETS ---------- */
+
+.score-table {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 10px !important;
+}
+
+.player-score-card {
+  padding: 10px !important;
+}
+
+.player-score-card-head {
+  margin-bottom: 6px !important;
+}
+
+.player-score-card-head > div > strong {
+  font-size: 14px !important;
+}
+
+.player-score-card-head small {
+  font-size: 9px !important;
+}
+
+.player-score-sections {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.player-score-section {
+  min-width: 0;
+}
+
+.score-section-label {
+  margin: 4px 0 !important;
+  font-size: 8px !important;
+}
+
+.player-score-upper,
+.player-score-lower {
+  gap: 3px !important;
+}
+
+/*
+   Keep the number next to the category name instead of pushing it
+   to the far right edge of the card.
+*/
+.player-score-card .score-row {
+  grid-template-columns: minmax(0, max-content) 30px !important;
+  justify-content: start;
+  gap: 7px !important;
+  min-height: 27px;
+  padding: 4px 6px !important;
+  border-radius: 7px !important;
+}
+
+.player-score-card .score-row > span:first-child {
+  min-width: 0;
+}
+
+.player-score-card .score-name {
+  font-size: 11.5px !important;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.player-score-card .score-rule {
+  display: none !important;
+}
+
+.player-score-card .score-value {
+  min-width: 30px !important;
+  font-size: 12.5px !important;
+  line-height: 1;
+  text-align: left !important;
+}
+
+.score-summary-row {
+  grid-template-columns: max-content auto !important;
+  justify-content: start;
+  gap: 7px !important;
+  min-height: 27px;
+  padding: 4px 6px !important;
+  font-size: 10.5px !important;
+}
+
+.score-summary-row small {
+  display: none;
+}
+
+.score-summary-row > strong {
+  font-size: 11.5px;
+}
+
+@media (max-width: 1120px) {
+  .game-layout {
+    grid-template-columns: 1fr !important;
+    grid-template-areas:
+      "play"
+      "chat"
+      "score";
+  }
+
+  .chat-panel .chat-messages {
+    height: 220px;
+  }
+
+  .score-table {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 720px) {
+  #diceArea.dice-area {
+    gap: 2px !important;
+    padding-inline: 0;
+  }
+
+  .dice3d-static-face {
+    --static-die-size: 46px;
+    padding: 6px;
+    border-radius: 10px;
+  }
+
+  .dice3d-cube {
+    --dice-size: 44px;
+  }
+
+  .die-pip {
+    width: 6.5px;
+    height: 6.5px;
+  }
+
+  .score-table {
+    grid-template-columns: 1fr !important;
+  }
+
+  .player-score-sections {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 470px) {
+  .dice3d-static-face {
+    --static-die-size: 40px;
+    padding: 5px;
+  }
+
+  .dice3d-cube {
+    --dice-size: 39px;
+  }
+
+  .die-pip {
+    width: 5.8px;
+    height: 5.8px;
+  }
+
+  .player-score-sections {
+    grid-template-columns: 1fr;
+  }
+}

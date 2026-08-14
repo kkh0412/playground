@@ -1559,7 +1559,7 @@ function renderPlayerStrip() {
     chip.innerHTML = `
       <span class="player-chip-main">
         <span class="player-chip-name">${escapeHTML(player.username)}</span>
-        <small class="player-chip-meta">승 ${player.wins} · 야추 ${player.yachtRolls}</small>
+        <small class="player-chip-meta">승 ${player.wins} · 요트 ${player.yachtRolls}</small>
       </span>
       <span class="player-chip-score">${totalFor(player.userId)}점</span>
     `;
@@ -1604,6 +1604,14 @@ function cubeFaceMarkup() {
     <span class="dice3d-face dice3d-left" data-face="4">${pipMarkup(4)}</span>
     <span class="dice3d-face dice3d-top" data-face="2">${pipMarkup(2)}</span>
     <span class="dice3d-face dice3d-bottom" data-face="5">${pipMarkup(5)}</span>
+  `;
+}
+
+function staticDieFaceMarkup(value) {
+  return `
+    <span class="dice3d-static-face" data-static-value="${value}">
+      ${pipMarkup(value)}
+    </span>
   `;
 }
 
@@ -1708,8 +1716,7 @@ function renderDice(diceOverride = null, heldOverride = null) {
     button.type = "button";
     button.className = [
       "dice3d-button",
-      held[index] ? "held" : "",
-      state.diceAnimating ? "rolling" : ""
+      held[index] ? "held" : ""
     ].filter(Boolean).join(" ");
 
     button.disabled =
@@ -1725,10 +1732,14 @@ function renderDice(diceOverride = null, heldOverride = null) {
     button.innerHTML = `
       <span class="dice3d-stage">
         <span class="dice3d-shadow" aria-hidden="true"></span>
+
+        ${staticDieFaceMarkup(value)}
+
         <span class="dice3d-cube"
               data-index="${index}"
               data-value="${value}"
-              style="transform:${faceTransform(value)}">
+              style="transform:${faceTransform(value)}"
+              aria-hidden="true">
           ${cubeFaceMarkup()}
         </span>
       </span>
@@ -1808,17 +1819,15 @@ function randomBetween(min, max) {
   return min + Math.random() * (max - min);
 }
 
-function animateHeldDie(button, cube, value) {
-  cube.style.transform = faceTransform(value);
-
+function animateHeldDie(button, _cube, _value) {
   const pulse = button.animate(
     [
       { transform: "translateY(0) scale(1)" },
-      { transform: "translateY(-3px) scale(1.025)" },
+      { transform: "translateY(-2px) scale(1.02)" },
       { transform: "translateY(0) scale(1)" }
     ],
     {
-      duration: 280,
+      duration: 230,
       easing: "ease-out"
     }
   );
@@ -1874,7 +1883,7 @@ async function animateDiceRoll(
 
     if (!cube) return Promise.resolve();
 
-    if (heldBefore[index]) {
+    if (safeHeld[index]) {
       return animateHeldDie(button, cube, target);
     }
 
@@ -2006,6 +2015,13 @@ async function animateDiceRoll(
 
   await Promise.all(animations);
 
+  // Return to a browser-stable static face after the 3D roll finishes.
+  // This makes hover completely independent of 3D backface compositing.
+  renderDice(
+    safeTargets,
+    state.gameState?.held || safeHeld
+  );
+
   if (
     isYahtzeeDice(safeTargets) &&
     safeHeld.some(held => !held)
@@ -2076,6 +2092,7 @@ function createScoreCategoryRow(player, category, scoreMap, isTurnPlayer) {
   button.className =
     `score-row ${used ? "used" : ""} ${canChoose ? "selectable" : ""}`;
   button.disabled = !canChoose;
+  button.title = category.rule;
 
   button.innerHTML = `
     <span>
@@ -2136,20 +2153,28 @@ function renderScoreTable() {
           <strong>${escapeHTML(player.username)}</strong>
           <small>
             승 ${player.wins}
-            · 누적 야추 ${player.yachtRolls}
-            · 이번 게임 야추 ${player.gameYachtRolls}
+            · 누적 요트 ${player.yachtRolls}
+            · 이번 게임 요트 ${player.gameYachtRolls}
           </small>
         </div>
         <strong class="player-score-total">${totalFor(player.userId)}점</strong>
       </div>
-      <div class="score-section-label">
-        <span>UPPER SECTION</span>
+
+      <div class="player-score-sections">
+        <section class="player-score-section">
+          <div class="score-section-label">
+            <span>UPPER</span>
+          </div>
+          <div class="player-score-upper"></div>
+        </section>
+
+        <section class="player-score-section">
+          <div class="score-section-label lower-label">
+            <span>LOWER</span>
+          </div>
+          <div class="player-score-lower"></div>
+        </section>
       </div>
-      <div class="player-score-upper"></div>
-      <div class="score-section-label lower-label">
-        <span>LOWER SECTION</span>
-      </div>
-      <div class="player-score-lower"></div>
     `;
 
     const upperContainer = card.querySelector(".player-score-upper");
@@ -2921,7 +2946,7 @@ function adminUsersTable(users) {
           <th>승</th>
           <th>패</th>
           <th>무</th>
-          <th>야추</th>
+          <th>요트</th>
           <th>관리</th>
         </tr>
       </thead>
