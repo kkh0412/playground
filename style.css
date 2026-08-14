@@ -2992,3 +2992,41 @@ body.spectator-mode #rollBtn {
     grid-column: auto;
   }
 }
+
+
+/* ============================================================
+   Demo v12 — feedback typography + language toggle
+   ============================================================ */
+.feedback-copy strong {
+  font-size: 19px !important;
+  line-height: 1.4;
+}
+.feedback-copy p {
+  font-size: 14px !important;
+  line-height: 1.55;
+}
+.feedback-form label {
+  font-size: 14px !important;
+  line-height: 1.4;
+}
+.feedback-form select,
+.feedback-form textarea {
+  font-size: 14px !important;
+}
+.feedback-form select {
+  min-height: 46px;
+}
+.feedback-form textarea {
+  min-height: 126px;
+  line-height: 1.6;
+}
+.feedback-form-footer {
+  font-size: 13px;
+}
+#feedbackCharCount {
+  font-size: 12px !important;
+}
+.lang-toggle {
+  min-width: 42px;
+  font-weight: 900;
+}

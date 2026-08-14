@@ -94,24 +94,223 @@ const db = IS_CONFIGURED
 
 const PAGE_STORAGE_KEY = "playground_current_page_v3";
 const SPECTATOR_STORAGE_KEY = "playground_spectator_room_v3";
+
+const LANGUAGE_STORAGE_KEY = "playground_language_v1";
+const STATIC_I18N = [[".brand > span:last-child", "대관령산양의 놀이터", "DGL Goral Playground", "text"], [".main-nav [data-nav=\"home\"]", "홈", "Home", "text"], [".main-nav [data-nav=\"account\"]", "내 계정", "Account", "text"], ["#adminNavBtn", "관리자", "Admin", "text"], [".hero-panel .eyebrow", "대관령산양 제작 놀이터", "PLAYGROUND BY DGL GORAL", "text"], [".hero-panel h1", "대관령산양의<br />놀이터", "DGL GORAL<br />PLAYGROUND", "html"], [".hero-copy", "공개방에서 새로운 사람을 만나거나, 비공개방에서 친구들과 실시간으로 플레이하세요.", "Meet new players in public rooms or play with friends in private rooms in real time.", "text"], [".hero-stats article:nth-of-type(1) span", "현재 플레이 중", "Playing now", "text"], [".hero-stats article:nth-of-type(1) small", "실시간 접속 기준", "Real-time presence", "text"], [".hero-stats article:nth-of-type(2) span", "등록된 계정", "Registered accounts", "text"], [".hero-stats article:nth-of-type(2) small", "놀이터 전체", "Across Playground", "text"], ["#page-home .section-block:nth-of-type(2) .eyebrow", "게임", "GAMES", "text"], ["#page-home .section-block:nth-of-type(2) h2", "게임 선택", "Choose a game", "text"], [".game-card.featured h3", "요트 다이스", "Yacht Dice", "text"], [".game-card.featured .game-card-body > p", "2–4명이 각자의 기기에서 접속해 즐기는 온라인 턴제 주사위 게임입니다.", "An online turn-based dice game for 2–4 players on separate devices.", "text"], ["#openYachtBtn", "게임방으로", "Open rooms", "text"], [".game-card:nth-of-type(2) .game-meta", "준비 중", "Coming soon", "text"], [".game-card:nth-of-type(2) h3", "체스", "Chess", "text"], [".game-card:nth-of-type(2) .game-card-body > p", "친구와 즐기는 클래식 체스.", "Classic chess with a friend.", "text"], [".game-card:nth-of-type(2) button", "준비 중", "Coming soon", "text"], [".game-card:nth-of-type(3) .game-meta", "준비 중", "Coming soon", "text"], [".game-card:nth-of-type(3) h3", "카드 게임", "Card Game", "text"], [".game-card:nth-of-type(3) .game-card-body > p", "다음 미니게임을 위한 자리입니다.", "Reserved for the next mini game.", "text"], [".game-card:nth-of-type(3) button", "준비 중", "Coming soon", "text"], [".home-chat-section .eyebrow", "전체 채팅", "GLOBAL CHAT", "text"], [".home-chat-section h2", "전체 채팅", "Global chat", "text"], ["#globalChatForm > button", "전송", "Send", "text"], ["#globalChatLoginHint", "로그인하면 전체 채팅에 참여할 수 있습니다.", "Sign in to join the global chat.", "text"], [".feedback-section .eyebrow", "피드백", "FEEDBACK", "text"], [".feedback-section h2", "개발자에게 피드백", "Send feedback to the developer", "text"], [".feedback-copy strong", "불편한 점이나 추가했으면 하는 기능을 알려주세요.", "Tell the developer about bugs, usability issues, or features you want.", "text"], [".feedback-copy p", "보낸 내용은 관리자만 확인할 수 있습니다.", "Only the administrator can view submitted feedback.", "text"], ["#feedbackSubmitBtn", "피드백 보내기", "Send feedback", "text"], ["#feedbackLoginHint", "로그인하면 개발자에게 피드백을 보낼 수 있습니다.", "Sign in to send feedback to the developer.", "text"], ["#feedbackKind option[value=\"bug\"]", "버그 신고", "Bug report", "text"], ["#feedbackKind option[value=\"feature\"]", "기능 제안", "Feature request", "text"], ["#feedbackKind option[value=\"ui\"]", "화면 / 사용성", "UI / usability", "text"], ["#feedbackKind option[value=\"other\"]", "기타", "Other", "text"], ["#page-account .page-title .eyebrow", "계정", "ACCOUNT", "text"], ["#page-account .page-title h1", "내 계정", "My account", "text"], ["#page-account .page-title > p:last-child", "아이디와 비밀번호로 로그인하고 승패 기록을 확인합니다.", "Sign in with your ID and password and review your match record.", "text"], [".auth-tab[data-auth-tab=\"login\"]", "로그인", "Sign in", "text"], [".auth-tab[data-auth-tab=\"signup\"]", "계정 만들기", "Create account", "text"], ["#loginForm button", "로그인", "Sign in", "text"], ["#signupForm button", "계정 만들기", "Create account", "text"], [".account-note h3", "온라인 계정", "Online account", "text"], [".profile-head .eyebrow", "플레이어 프로필", "PLAYER PROFILE", "text"], [".profile-head div:nth-of-type(2) > p:last-child", "놀이터 온라인 프로필", "Playground online profile", "text"], ["#logoutBtn", "로그아웃", "Sign out", "text"], [".profile-stats article:nth-of-type(1) span", "전체 경기", "Games", "text"], [".profile-stats article:nth-of-type(2) span", "승", "Wins", "text"], [".profile-stats article:nth-of-type(3) span", "패", "Losses", "text"], [".profile-stats article:nth-of-type(4) span", "무", "Draws", "text"], [".profile-stats article:nth-of-type(5) span", "요트 횟수", "Yahtzees", "text"], [".profile-stats article:nth-of-type(6) span", "승률", "Win rate", "text"], [".history-card .eyebrow", "경기 기록", "MATCH HISTORY", "text"], [".history-card h2", "최근 경기", "Recent matches", "text"], [".back-home-btn", "← 홈으로", "← Home", "text"], ["#page-lobby .page-title .eyebrow", "요트 다이스", "YACHT DICE", "text"], ["#page-lobby .page-title h1", "온라인 게임방", "Online rooms", "text"], ["#page-lobby .page-title > p:last-child", "공개방을 찾아 바로 참여하거나, 비공개방 코드를 이용해 친구들과 플레이하세요.", "Join a public room directly or use a private room code to play with friends.", "text"], [".lobby-card:nth-of-type(1) .eyebrow", "방 만들기", "CREATE ROOM", "text"], [".lobby-card:nth-of-type(1) h2", "방 만들기", "Create room", "text"], ["#publicRoomBtn strong", "공개방", "Public room", "text"], ["#publicRoomBtn small", "누구나 목록에서 참여", "Anyone can join from the list", "text"], ["#privateRoomBtn strong", "비공개방", "Private room", "text"], ["#privateRoomBtn small", "방 코드로만 참여", "Join by room code only", "text"], ["#createRoomBtn", "새 방 만들기", "Create new room", "text"], [".lobby-card:nth-of-type(2) .eyebrow", "방 입장", "JOIN ROOM", "text"], [".lobby-card:nth-of-type(2) h2", "방 코드로 입장", "Join by code", "text"], ["#joinRoomForm button", "입장", "Join", "text"], ["#publicRoomsPanel .eyebrow", "공개방", "PUBLIC ROOMS", "text"], ["#publicRoomsPanel h2", "공개방", "Public rooms", "text"], ["#refreshPublicRoomsBtn", "새로고침", "Refresh", "text"], ["#activeRoomPanel .eyebrow", "내 방", "YOUR ROOM", "text"], ["#copyRoomCodeBtn", "코드 복사", "Copy code", "text"], ["#startRoomBtn", "게임 시작", "Start game", "text"], ["#resumeRoomBtn", "게임으로 돌아가기", "Return to game", "text"], ["#leaveRoomBtn", "방 나가기", "Leave room", "text"], ["#leaveGameBtn", "← 홈으로", "← Home", "text"], ["#gameModeBadge", "관전 중", "SPECTATING", "text"], [".turn-info > div:nth-of-type(1) .label", "현재 차례", "Current turn", "text"], [".turn-info > div:nth-of-type(2) .label", "라운드", "Round", "text"], [".turn-info > div:nth-of-type(3) .label", "남은 굴리기", "Rolls left", "text"], ["#rollBtn", "주사위 굴리기", "Roll dice", "text"], [".help strong", "조작법", "Controls", "text"], [".score-header .eyebrow", "점수표", "SCORE SHEETS", "text"], ["#scoreSheetPlayer", "모든 플레이어 점수표", "All player score sheets", "text"], [".total-box span", "내 총점", "My total", "text"], [".chat-header .eyebrow", "방 채팅", "ROOM CHAT", "text"], [".chat-header h2", "채팅", "Chat", "text"], ["#chatForm > button", "전송", "Send", "text"], ["#page-admin .page-title .eyebrow", "관리자 콘솔", "ADMIN CONSOLE", "text"], ["#page-admin .page-title h1", "관리자 모드", "Admin console", "text"], ["#page-admin .page-title p:last-child", "계정, 게임방, 경기 기록과 최근 채팅 현황을 확인합니다.", "Review accounts, rooms, match history, chat logs, and feedback.", "text"], ["#page-admin .admin-card:nth-of-type(1) .eyebrow", "사용자", "USERS", "text"], ["#page-admin .admin-card:nth-of-type(1) h2", "사용자", "Users", "text"], ["#page-admin .admin-card:nth-of-type(2) .eyebrow", "게임방", "ROOMS", "text"], ["#page-admin .admin-card:nth-of-type(2) h2", "게임방", "Rooms", "text"], ["#page-admin .admin-card:nth-of-type(3) .eyebrow", "경기", "MATCHES", "text"], ["#page-admin .admin-card:nth-of-type(3) h2", "최근 경기", "Recent matches", "text"], ["#page-admin .admin-card:nth-of-type(4) .eyebrow", "채팅 기록", "CHAT LOG", "text"], ["#page-admin .admin-card:nth-of-type(4) h2", "최근 채팅", "Recent chat", "text"], [".admin-feedback-card .eyebrow", "피드백", "FEEDBACK", "text"], [".admin-feedback-card h2", "개발자 피드백", "Developer feedback", "text"], ["#gameOverModal .eyebrow", "게임 종료", "GAME OVER", "text"], ["#gameOverModal h2", "게임 종료", "Game over", "text"], ["#finishGameBtn", "홈으로", "Go home", "text"], ["#setupModal .eyebrow", "설정 필요", "SETUP REQUIRED", "text"], ["#setupModal h2", "Supabase 설정이 필요합니다", "Supabase setup required", "text"], [".yahtzee-kicker", "같은 눈 다섯 개", "FIVE OF A KIND", "text"], [".yahtzee-celebration-card > strong", "요트!", "YAHTZEE!", "text"], ["#roomNameInput", "예: 초보 환영! 가볍게 한 판", "e.g. Beginners welcome!", "placeholder"], ["#roomCodeInput", "예: A1B2C3", "e.g. A1B2C3", "placeholder"], ["#feedbackBody", "개발자에게 전달할 내용을 입력하세요.", "Enter feedback for the developer.", "placeholder"], ["#globalChatInput", "모두에게 메시지를 보내세요", "Send a message to everyone", "placeholder"], ["#chatInput", "메시지를 입력하세요", "Enter a message", "placeholder"]];
+
+function preferredLanguage() {
+  return localStorage.getItem(LANGUAGE_STORAGE_KEY) === "en" ? "en" : "ko";
+}
+
+function tr(ko, en) {
+  return (state?.language || preferredLanguage()) === "en" ? en : ko;
+}
+
+
+STATIC_I18N.push(
+  [".account-note p:nth-of-type(1)",
+    "비밀번호는 웹페이지에 저장하지 않고 Supabase Auth가 처리합니다. 경기 기록은 서버 DB에 저장되어 다른 기기에서 로그인해도 유지됩니다.",
+    "Passwords are handled by Supabase Auth and are not stored by this webpage. Match records are stored in the server database and remain available across devices.",
+    "text"],
+  [".account-note p:nth-of-type(2)",
+    "현재 버전은 아이디/비밀번호 방식에 맞추기 위해 내부 인증용 이메일을 자동 생성합니다. 비밀번호 분실 복구 기능은 아직 제공하지 않습니다.",
+    "This version generates an internal authentication email for ID/password login. Password recovery is not available yet.",
+    "text"],
+  ["#setupModal .setup-card > p:last-child",
+    "main.js 상단의 URL과 Publishable key를 입력한 뒤 다시 배포하세요.",
+    "Enter the URL and Publishable key at the top of main.js, then redeploy.",
+    "text"]
+);
+
+function setLeadingText(selector, ko, en) {
+  const node = document.querySelector(selector);
+  if (!node) return;
+  const text = tr(ko, en);
+  const child = [...node.childNodes].find(
+    item => item.nodeType === Node.TEXT_NODE && item.nodeValue.trim()
+  );
+  if (child) child.nodeValue = `\n                ${text}\n                `;
+}
+
+
+function getAudioContext() {
+  if (!state.audioContext) {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return null;
+    state.audioContext = new AudioContextClass();
+  }
+  if (state.audioContext.state === "suspended") {
+    state.audioContext.resume().catch(() => {});
+  }
+  return state.audioContext;
+}
+
+function playClickSound() {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = "sine";
+  osc.frequency.setValueAtTime(620, now);
+  osc.frequency.exponentialRampToValueAtTime(430, now + 0.045);
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(0.055, now + 0.005);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.055);
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(now);
+  osc.stop(now + 0.06);
+}
+
+function startDiceRollSound() {
+  stopDiceRollSound();
+  const ctx = getAudioContext();
+  if (!ctx) return;
+
+  const buffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.28), ctx.sampleRate);
+  const samples = buffer.getChannelData(0);
+  for (let i = 0; i < samples.length; i += 1) {
+    samples[i] = (Math.random() * 2 - 1) * (0.45 + Math.random() * 0.55);
+  }
+
+  const source = ctx.createBufferSource();
+  const filter = ctx.createBiquadFilter();
+  const gain = ctx.createGain();
+  source.buffer = buffer;
+  source.loop = true;
+  filter.type = "bandpass";
+  filter.frequency.value = 1450;
+  filter.Q.value = 0.8;
+  gain.gain.value = 0.045;
+  source.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+  source.start();
+
+  const clackTimer = window.setInterval(() => {
+    if (!state.rollSound) return;
+    const t0 = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const clickGain = ctx.createGain();
+    osc.type = "triangle";
+    osc.frequency.setValueAtTime(170 + Math.random() * 110, t0);
+    clickGain.gain.setValueAtTime(0.018 + Math.random() * 0.018, t0);
+    clickGain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.035);
+    osc.connect(clickGain);
+    clickGain.connect(ctx.destination);
+    osc.start(t0);
+    osc.stop(t0 + 0.04);
+  }, 105);
+
+  state.rollSound = { source, gain, clackTimer };
+}
+
+function stopDiceRollSound() {
+  const sound = state.rollSound;
+  if (!sound) return;
+  clearInterval(sound.clackTimer);
+  try {
+    const ctx = state.audioContext;
+    if (ctx && sound.gain) {
+      const now = ctx.currentTime;
+      sound.gain.gain.cancelScheduledValues(now);
+      sound.gain.gain.setValueAtTime(Math.max(sound.gain.gain.value, 0.0001), now);
+      sound.gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.06);
+      sound.source.stop(now + 0.07);
+    } else {
+      sound.source.stop();
+    }
+  } catch {}
+  state.rollSound = null;
+}
+
+function applyStaticLanguage() {
+  document.documentElement.lang = state.language;
+  document.title = tr("대관령산양의 놀이터", "DGL Goral Playground");
+
+  for (const [selector, ko, en, mode] of STATIC_I18N) {
+    const node = document.querySelector(selector);
+    if (!node) continue;
+    const value = tr(ko, en);
+    if (mode === "html") node.innerHTML = value;
+    else if (mode === "placeholder") node.placeholder = value;
+    else node.textContent = value;
+  }
+
+  setLeadingText("#loginForm label:nth-of-type(1)", "아이디", "User ID");
+  setLeadingText("#loginForm label:nth-of-type(2)", "비밀번호", "Password");
+  setLeadingText("#signupForm label:nth-of-type(1)", "아이디", "User ID");
+  setLeadingText("#signupForm label:nth-of-type(2)", "비밀번호", "Password");
+  setLeadingText("#signupForm label:nth-of-type(3)", "비밀번호 확인", "Confirm password");
+  setLeadingText(".lobby-card:nth-of-type(1) > label:nth-of-type(1)", "방 이름", "Room name");
+  setLeadingText(".lobby-card:nth-of-type(1) > .field-label:nth-of-type(2)", "공개 설정", "Visibility");
+  setLeadingText(".player-count-picker", "", "");
+  const playerPicker = document.querySelector(".player-count-picker");
+  if (playerPicker?.parentElement) {
+    const child = [...playerPicker.parentElement.childNodes].find(
+      item => item.nodeType === Node.TEXT_NODE && item.nodeValue.trim()
+    );
+    if (child) child.nodeValue = `\n              ${tr("최대 인원", "Max players")}\n              `;
+  }
+  setLeadingText("#joinRoomForm label", "방 코드", "Room code");
+  setLeadingText("#feedbackForm > label:nth-of-type(1)", "종류", "Type");
+  setLeadingText("#feedbackForm > label:nth-of-type(2)", "내용", "Message");
+
+  el("languageToggleBtn").textContent = state.language === "ko" ? "EN" : "KO";
+
+  if (el("yahtzeeCelebration").classList.contains("hidden")) {
+    el("yahtzeeCelebrationPlayer").textContent =
+      tr("축하합니다!", "Congratulations!");
+  }
+}
+
+function applyLanguage({ rerender = true } = {}) {
+  applyStaticLanguage();
+  renderHeader();
+  updateBgmButton();
+  setFeedbackAvailability();
+
+  if (!rerender) return;
+  renderGlobalChat();
+  renderPublicRooms();
+  if (state.activeRoom) renderActiveRoom();
+  if (state.gameState && state.page === "game") renderGame();
+  if (state.adminData && state.page === "admin") renderAdminDashboard();
+}
+
+function toggleLanguage() {
+  state.language = state.language === "ko" ? "en" : "ko";
+  localStorage.setItem(LANGUAGE_STORAGE_KEY, state.language);
+  applyLanguage();
+}
+
 const UPPER_CATEGORY_KEYS = [
   "ones", "twos", "threes", "fours", "fives", "sixes"
 ];
 
 const categories = [
-  { key: "ones", name: "Aces", rule: "1의 눈 총합", section: "upper" },
-  { key: "twos", name: "Deuces", rule: "2의 눈 총합", section: "upper" },
-  { key: "threes", name: "Threes", rule: "3의 눈 총합", section: "upper" },
-  { key: "fours", name: "Fours", rule: "4의 눈 총합", section: "upper" },
-  { key: "fives", name: "Fives", rule: "5의 눈 총합", section: "upper" },
-  { key: "sixes", name: "Sixes", rule: "6의 눈 총합", section: "upper" },
-  { key: "choice", name: "Choice", rule: "5개 주사위의 총합", section: "lower" },
-  { key: "fourKind", name: "4 of a Kind", rule: "같은 눈 4개 이상 → 전체 합", section: "lower" },
-  { key: "fullHouse", name: "Full House", rule: "3개 + 2개 → 25점", section: "lower" },
-  { key: "smallStraight", name: "Small Straight", rule: "연속 4개 → 30점", section: "lower" },
-  { key: "largeStraight", name: "Large Straight", rule: "연속 5개 → 40점", section: "lower" },
-  { key: "yacht", name: "Yahtzee", rule: "5개 모두 같음 → 50점", section: "lower" }
+  { key: "ones", section: "upper", koName: "에이스", enName: "Aces", koRule: "1의 눈 총합", enRule: "Sum of ones" },
+  { key: "twos", section: "upper", koName: "듀스", enName: "Deuces", koRule: "2의 눈 총합", enRule: "Sum of twos" },
+  { key: "threes", section: "upper", koName: "쓰리", enName: "Threes", koRule: "3의 눈 총합", enRule: "Sum of threes" },
+  { key: "fours", section: "upper", koName: "포", enName: "Fours", koRule: "4의 눈 총합", enRule: "Sum of fours" },
+  { key: "fives", section: "upper", koName: "파이브", enName: "Fives", koRule: "5의 눈 총합", enRule: "Sum of fives" },
+  { key: "sixes", section: "upper", koName: "식스", enName: "Sixes", koRule: "6의 눈 총합", enRule: "Sum of sixes" },
+  { key: "choice", section: "lower", koName: "초이스", enName: "Choice", koRule: "주사위 5개의 총합", enRule: "Sum of all five dice" },
+  { key: "fourKind", section: "lower", koName: "포 오브 어 카인드", enName: "4 of a Kind", koRule: "같은 눈 4개 이상이면 전체 합", enRule: "Four or more of one value: sum all dice" },
+  { key: "fullHouse", section: "lower", koName: "풀 하우스", enName: "Full House", koRule: "같은 눈 3개와 2개면 25점", enRule: "Three of one value and two of another: 25" },
+  { key: "smallStraight", section: "lower", koName: "스몰 스트레이트", enName: "Small Straight", koRule: "연속된 눈 4개면 30점", enRule: "Four consecutive values: 30" },
+  { key: "largeStraight", section: "lower", koName: "라지 스트레이트", enName: "Large Straight", koRule: "연속된 눈 5개면 40점", enRule: "Five consecutive values: 40" },
+  { key: "yacht", section: "lower", koName: "요트", enName: "Yahtzee", koRule: "5개가 모두 같으면 50점", enRule: "All five dice equal: 50" }
 ];
+
+function categoryName(category) {
+  return state.language === "en" ? category.enName : category.koName;
+}
+
+function categoryRule(category) {
+  return state.language === "en" ? category.enRule : category.koRule;
+}
 
 
 const BGM_AUDIO_SRC = "audio/bgm.mp3";
@@ -147,6 +346,7 @@ const CHAT_EMOJIS = [
 
 const state = {
   page: "home",
+  language: preferredLanguage(),
   maxPlayers: 4,
   roomIsPublic: true,
   publicRooms: [],
@@ -166,7 +366,10 @@ const state = {
   optimisticHolds: {},
   holdVersions: [0, 0, 0, 0, 0],
   yahtzeeCelebrationTimer: null,
+  lastCelebratedRollId: null,
   adminData: null,
+  audioContext: null,
+  rollSound: null,
   bgmEnabled: false,
   bgmTrackIndex: 0,
   accountGuardPoller: null,
@@ -416,7 +619,7 @@ function isLoggedIn() {
 }
 
 function currentUsername() {
-  return state.profile?.username || "게스트";
+  return state.profile?.username || tr("게스트", "Guest");
 }
 
 function isAdmin() {
@@ -437,11 +640,11 @@ function navigate(page, options = {}) {
 
   if ((page === "lobby" || page === "game") && !isLoggedIn()) {
     page = "account";
-    showToast("온라인 게임은 로그인 후 이용할 수 있습니다.");
+    showToast(tr("온라인 게임은 로그인 후 이용할 수 있습니다.", "Sign in to use online games."));
   }
 
   if (page === "admin" && !isAdmin()) {
-    showToast("관리자 권한이 필요합니다.");
+    showToast(tr("관리자 권한이 필요합니다.", "Administrator permission is required."));
     return;
   }
 
@@ -483,7 +686,7 @@ function navigate(page, options = {}) {
 
 function renderHeader() {
   el("headerUserText").textContent = currentUsername();
-  el("headerAccountBtn").textContent = isLoggedIn() ? "프로필" : "로그인";
+  el("headerAccountBtn").textContent = isLoggedIn() ? tr("프로필", "Profile") : tr("로그인", "Sign in");
   el("adminNavBtn").classList.toggle("hidden", !isAdmin());
 }
 
@@ -536,7 +739,7 @@ async function checkOwnAccountStillExists() {
     if (state.accountGuardMisses < 2) return;
 
     stopAccountGuard();
-    showToast("계정이 더 이상 존재하지 않아 로그아웃됩니다.");
+    showToast(tr("계정이 더 이상 존재하지 않아 로그아웃됩니다.", "This account no longer exists. Signing out."));
         await db.auth.signOut({ scope: "local" });
   } catch (error) {
     console.error("account guard:", error);
@@ -592,7 +795,7 @@ async function syncAuthUi(event, session) {
 
 async function applySignedInSession(session) {
   if (!session) {
-    throw new Error("로그인 세션을 만들지 못했습니다.");
+    throw new Error(tr("로그인 세션을 만들지 못했습니다.", "Could not create a login session."));
   }
 
   state.session = session;
@@ -738,7 +941,7 @@ async function initPresence() {
       );
       const playing = playingUsers.size;
       el("homePlayingCount").textContent = playing;
-      el("yachtPlayerCount").textContent = `${playing}명 플레이 중`;
+      el("yachtPlayerCount").textContent = state.language === "ko" ? `${playing}명 플레이 중` : `${playing} playing`;
     })
     .subscribe(async status => {
       if (status === "SUBSCRIBED") {
@@ -788,7 +991,7 @@ async function renderAccount() {
 
     container.innerHTML = `
       <div class="empty-state">
-        <span>경기 기록을 불러오지 못했습니다.</span>
+        <span>${tr("경기 기록을 불러오지 못했습니다.", "Could not load match history.")}</span>
       </div>
     `;
 
@@ -798,7 +1001,7 @@ async function renderAccount() {
   if (!history?.length) {
     container.innerHTML = `
       <div class="empty-state">
-        <span>아직 경기 기록이 없습니다.</span>
+        <span>${tr("아직 경기 기록이 없습니다.", "No match history yet.")}</span>
       </div>
     `;
 
@@ -811,10 +1014,10 @@ async function renderAccount() {
 
     const label =
       item.result === "win"
-        ? "승"
+        ? tr("승", "Win")
         : item.result === "loss"
-          ? "패"
-          : "무";
+          ? tr("패", "Loss")
+          : tr("무", "Draw");
 
     const resultClass =
       item.result === "win"
@@ -826,11 +1029,16 @@ async function renderAccount() {
     row.innerHTML = `
       <div>
         <strong>
-          Yacht Dice · ${item.score}점 ·
-          ${item.player_count}인 경기
+          ${tr("요트 다이스", "Yacht Dice")} · ${
+            state.language === "ko"
+              ? `${item.score}점 · ${item.player_count}인 경기`
+              : `${item.score} pts · ${item.player_count} players`
+          }
         </strong>
         <small>
-          ${new Date(item.created_at).toLocaleString("ko-KR")}
+          ${new Date(item.created_at).toLocaleString(
+            state.language === "ko" ? "ko-KR" : "en-US"
+          )}
         </small>
       </div>
 
@@ -927,7 +1135,7 @@ async function loadProfile() {
 
 async function ensureProfileReady() {
   if (!isLoggedIn()) {
-    throw new Error("로그인이 필요합니다.");
+    throw new Error(tr("로그인이 필요합니다.", "Sign-in required."));
   }
 
   if (state.profile?.id === currentUserId()) {
@@ -993,7 +1201,7 @@ async function signup(event) {
   message.textContent = "";
 
   if (isOldAdminLoginId(username)) {
-    message.textContent = "이 아이디는 더 이상 사용할 수 없습니다.";
+    message.textContent = tr("이 아이디는 더 이상 사용할 수 없습니다.", "This ID is no longer available.");
     return;
   }
 
@@ -1003,12 +1211,12 @@ async function signup(event) {
   }
 
   if (password.length < 8) {
-    message.textContent = "비밀번호는 8자 이상으로 설정하세요.";
+    message.textContent = tr("비밀번호는 8자 이상으로 설정하세요.", "Password must be at least 8 characters.");
     return;
   }
 
   if (password !== confirmPassword) {
-    message.textContent = "비밀번호 확인이 일치하지 않습니다.";
+    message.textContent = tr("비밀번호 확인이 일치하지 않습니다.", "Password confirmation does not match.");
     return;
   }
 
@@ -1037,7 +1245,7 @@ async function signup(event) {
       await applySignedInSession(data.session);
     }
 
-    showToast("계정이 생성되었습니다.");
+    showToast(tr("계정이 생성되었습니다.", "Account created."));
     await renderAccount();
     rememberPage("account");
   } catch (error) {
@@ -1061,12 +1269,12 @@ async function login(event) {
   message.textContent = "";
 
   if (isOldAdminLoginId(username)) {
-    message.textContent = "아이디 또는 비밀번호가 올바르지 않습니다.";
+    message.textContent = tr("아이디 또는 비밀번호가 올바르지 않습니다.", "Incorrect ID or password.");
     return;
   }
 
   submitButton.disabled = true;
-  submitButton.textContent = "로그인 중...";
+  submitButton.textContent = tr("로그인 중...", "Signing in...");
 
   try {
     const email = await usernameToInternalEmail(username);
@@ -1106,11 +1314,11 @@ async function login(event) {
         "로그인은 되었지만 프로필을 불러오지 못했습니다. 페이지를 새로고침해 주세요.";
       renderHeader();
     } else {
-      message.textContent = "아이디 또는 비밀번호가 올바르지 않습니다.";
+      message.textContent = tr("아이디 또는 비밀번호가 올바르지 않습니다.", "Incorrect ID or password.");
     }
   } finally {
     submitButton.disabled = false;
-    submitButton.textContent = "로그인";
+    submitButton.textContent = tr("로그인", "Sign in");
   }
 }
 
@@ -1209,7 +1417,7 @@ async function createRoom() {
 
   if (!isLoggedIn()) {
     navigate("account");
-    showToast("로그인 후 방을 만들 수 있습니다.");
+    showToast(tr("로그인 후 방을 만들 수 있습니다.", "Sign in to create a room."));
     return;
   }
 
@@ -1219,7 +1427,7 @@ async function createRoom() {
   const originalText = button.textContent;
 
   button.disabled = true;
-  button.textContent = "방 만드는 중...";
+  button.textContent = tr("방 만드는 중...", "Creating room...");
 
   try {
     await ensureProfileReady();
@@ -1281,7 +1489,7 @@ async function joinRoomByCode(code) {
   if (state.busy) return false;
 
   if (!/^[A-F0-9]{6}$/.test(code)) {
-    showToast("6자리 방 코드를 입력하세요.");
+    showToast(tr("6자리 방 코드를 입력하세요.", "Enter a 6-character room code."));
     return false;
   }
 
@@ -1296,7 +1504,7 @@ async function joinRoomByCode(code) {
 
     if (error) throw error;
 
-    showToast("방에 입장했습니다.");
+    showToast(tr("방에 입장했습니다.", "Joined the room."));
     await refreshLobby();
     return true;
   } catch (error) {
@@ -1325,7 +1533,7 @@ async function clearStaleSpectatorSession() {
 async function spectatePublicRoom(roomId) {
   if (!isLoggedIn()) {
     navigate("account");
-    showToast("로그인 후 관전할 수 있습니다.");
+    showToast(tr("로그인 후 관전할 수 있습니다.", "Sign in to spectate."));
     return;
   }
 
@@ -1391,7 +1599,7 @@ async function leaveSpectatorRoom(roomId, silent = false) {
     console.error("leave spectator:", error);
 
     if (!silent) {
-      showToast("관전 종료 처리 중 오류가 발생했습니다.");
+      showToast(tr("관전 종료 처리 중 오류가 발생했습니다.", "An error occurred while leaving spectator mode."));
     }
   } finally {
     cleanupRoomChannel();
@@ -1467,12 +1675,12 @@ function renderPublicRooms() {
       <div class="public-room-main">
         <div class="public-room-title">
           <strong>${escapeHTML(room.room_name)}</strong>
-          <span class="demo-badge">${playing ? "PLAYING" : "WAITING"}</span>
+          <span class="demo-badge">${playing ? tr("진행 중", "PLAYING") : tr("대기 중", "WAITING")}</span>
         </div>
         <small>
-          HOST ${escapeHTML(room.host_username)}
-          · 방 코드 ${escapeHTML(room.room_code)}
-          ${playing ? `· 관전자 ${Number(room.spectator_count || 0)}명` : ""}
+          ${tr("방장", "HOST")} ${escapeHTML(room.host_username)}
+          · ${tr("방 코드", "Room code")} ${escapeHTML(room.room_code)}
+          ${playing ? state.language === "ko" ? `· 관전자 ${Number(room.spectator_count || 0)}명` : `· ${Number(room.spectator_count || 0)} spectators` : ""}
         </small>
       </div>
 
@@ -1484,12 +1692,12 @@ function renderPublicRooms() {
             ? `<button
                  class="secondary-btn public-spectate-btn"
                  data-room-id="${escapeHTML(room.room_id)}"
-               >관전</button>`
+               >${tr("관전", "Spectate")}</button>`
             : `<button
                  class="primary-btn public-join-btn"
                  data-code="${escapeHTML(room.room_code)}"
                  ${full ? "disabled" : ""}
-               >${full ? "가득 참" : "참여"}</button>`
+               >${full ? tr("가득 참", "Full") : tr("참여", "Join")}</button>`
         }
       </div>
     `;
@@ -1546,9 +1754,9 @@ function renderActiveRoom() {
   el("activeRoomName").textContent = room.name || "Yacht Dice";
   el("roomCodeText").textContent = room.code;
   el("roomStatusBadge").textContent = room.status.toUpperCase();
-  el("roomVisibilityText").textContent = room.isPublic ? "공개방" : "비공개방";
+  el("roomVisibilityText").textContent = room.isPublic ? tr("공개방", "Public room") : tr("비공개방", "Private room");
   el("roomCapacityText").textContent =
-    `${state.roomPlayers.length} / ${room.maxPlayers}명`;
+    state.language === "ko" ? `${state.roomPlayers.length} / ${room.maxPlayers}명` : `${state.roomPlayers.length} / ${room.maxPlayers}`;
 
   const container = el("roomPlayerList");
   container.innerHTML = "";
@@ -1590,7 +1798,7 @@ async function startRoom() {
     navigate("game");
   } catch (error) {
     console.error(error);
-    showToast(error.message || "게임을 시작하지 못했습니다.");
+    showToast(error.message || tr("게임을 시작하지 못했습니다.", "Could not start the game."));
   } finally {
     state.busy = false;
   }
@@ -1609,11 +1817,11 @@ async function leaveWaitingRoom() {
     cleanupRoomChannel();
     state.activeRoom = null;
     state.roomPlayers = [];
-    showToast("방에서 나왔습니다.");
+    showToast(tr("방에서 나왔습니다.", "Left the room."));
     await refreshLobby();
   } catch (error) {
     console.error(error);
-    showToast(error.message || "방에서 나가지 못했습니다.");
+    showToast(error.message || tr("방에서 나가지 못했습니다.", "Could not leave the room."));
   }
 }
 
@@ -1733,6 +1941,8 @@ async function handleRoomRefresh() {
 async function enterGameRoom() {
   if (!state.activeRoom) return;
 
+  state.lastCelebratedRollId = null;
+
   await subscribeRoom(state.activeRoom.id);
   await loadRoomPlayers();
   await loadGameData();
@@ -1747,7 +1957,7 @@ async function loadGameData() {
   const [stateResult, scoreResult] = await Promise.all([
     db
       .from("game_states")
-      .select("room_id, current_seat, dice, held, rolls_left, has_rolled, finished, updated_at")
+      .select("room_id, current_seat, dice, held, rolls_left, has_rolled, finished, last_roll_id, last_roll_was_yacht, last_roll_user_id, updated_at")
       .eq("room_id", state.activeRoom.id)
       .single(),
     db
@@ -1768,6 +1978,10 @@ async function loadGameData() {
 
   state.gameState = stateResult.data;
   state.scores = scoreResult.data || [];
+
+  if (state.lastCelebratedRollId === null) {
+    state.lastCelebratedRollId = Number(state.gameState.last_roll_id || 0);
+  }
 
   if (!state.gameState.has_rolled) {
     state.displayDice = null;
@@ -1863,9 +2077,13 @@ function renderPlayerStrip() {
     chip.innerHTML = `
       <span class="player-chip-main">
         <span class="player-chip-name">${escapeHTML(player.username)}</span>
-        <small class="player-chip-meta">승 ${player.wins} · 요트 ${player.yachtRolls}</small>
+        <small class="player-chip-meta">${
+          state.language === "ko"
+            ? `승 ${player.wins} · 요트 ${player.yachtRolls}`
+            : `Wins ${player.wins} · Yahtzees ${player.yachtRolls}`
+        }</small>
       </span>
-      <span class="player-chip-score">${totalFor(player.userId)}점</span>
+      <span class="player-chip-score">${state.language === "ko" ? `${totalFor(player.userId)}점` : `${totalFor(player.userId)} pts`}</span>
     `;
     strip.appendChild(chip);
   });
@@ -1951,7 +2169,7 @@ function updateDieHoldVisual(button, held) {
   button.classList.toggle("held", held);
 
   const label = button.querySelector(".dice3d-hold-label");
-  if (label) label.textContent = held ? "HOLD" : "";
+  if (label) label.textContent = held ? tr("고정", "HOLD") : "";
 }
 
 function clearOptimisticHolds() {
@@ -1999,7 +2217,7 @@ async function setHoldOptimistically(index, desiredHeld, version) {
       }
     }
 
-    showToast(error.message || "주사위 HOLD를 반영하지 못했습니다.");
+    showToast(error.message || tr("주사위 고정을 반영하지 못했습니다.", "Could not update the die hold."));
   }
 }
 
@@ -2110,7 +2328,12 @@ function renderDice(diceOverride = null, heldOverride = null) {
       state.diceAnimating ||
       state.isSpectator;
 
-    button.setAttribute("aria-label", `${index + 1}번째 주사위: ${value}`);
+    button.setAttribute(
+      "aria-label",
+      state.language === "ko"
+        ? `${index + 1}번째 주사위: ${value}`
+        : `Die ${index + 1}: ${value}`
+    );
     button.dataset.dieIndex = index;
 
     button.innerHTML = `
@@ -2127,7 +2350,7 @@ function renderDice(diceOverride = null, heldOverride = null) {
           ${cubeFaceMarkup()}
         </span>
       </span>
-      <span class="dice3d-hold-label">${held[index] ? "HOLD" : ""}</span>
+      <span class="dice3d-hold-label">${held[index] ? tr("고정", "HOLD") : ""}</span>
     `;
 
     button.addEventListener("click", () => {
@@ -2170,9 +2393,9 @@ function triggerYahtzeeCelebration(playerName = "") {
   clearTimeout(state.yahtzeeCelebrationTimer);
 
   el("yahtzeeCelebrationPlayer").textContent =
-    playerName
-      ? `${playerName}님이 Yahtzee를 완성했습니다!`
-      : "Yahtzee를 완성했습니다!";
+    state.language === "ko"
+      ? (playerName ? `${playerName}님이 요트를 완성했습니다!` : "요트를 완성했습니다!")
+      : (playerName ? `${playerName} rolled a Yahtzee!` : "Yahtzee!");
 
   confetti.innerHTML = "";
 
@@ -2193,6 +2416,31 @@ function triggerYahtzeeCelebration(playerName = "") {
     overlay.classList.add("hidden");
     confetti.innerHTML = "";
   }, 1900);
+}
+
+
+function maybeCelebrateServerConfirmedYacht() {
+  if (!state.gameState) return;
+
+  const rollId = Number(state.gameState.last_roll_id || 0);
+
+  if (
+    !state.gameState.last_roll_was_yacht ||
+    rollId <= 0 ||
+    rollId <= Number(state.lastCelebratedRollId || 0)
+  ) {
+    return;
+  }
+
+  state.lastCelebratedRollId = rollId;
+
+  const roller = state.roomPlayers.find(
+    player => player.userId === state.gameState.last_roll_user_id
+  );
+
+  triggerYahtzeeCelebration(
+    roller?.username || currentTurnPlayer()?.username || ""
+  );
 }
 
 function randomBetween(min, max) {
@@ -2378,12 +2626,6 @@ async function animateDiceRoll(
     state.gameState?.held || safeHeld
   );
 
-  if (
-    isYahtzeeDice(safeTargets) &&
-    safeHeld.some(held => !held)
-  ) {
-    triggerYahtzeeCelebration(currentTurnPlayer()?.username || "");
-  }
 }
 
 function previewScore(category, dice) {
@@ -2448,12 +2690,12 @@ function createScoreCategoryRow(player, category, scoreMap, isTurnPlayer) {
   button.className =
     `score-row ${used ? "used" : ""} ${canChoose ? "selectable" : ""}`;
   button.disabled = !canChoose;
-  button.title = category.rule;
+  button.title = categoryRule(category);
 
   button.innerHTML = `
     <span>
-      <span class="score-name">${category.name}</span>
-      <span class="score-rule">${category.rule}</span>
+      <span class="score-name">${categoryName(category)}</span>
+      <span class="score-rule">${categoryRule(category)}</span>
     </span>
     <span class="score-value ${canChoose ? "score-preview" : ""}">
       ${value}
@@ -2508,9 +2750,9 @@ function renderScoreTable() {
         <div>
           <strong>${escapeHTML(player.username)}</strong>
           <small>
-            승 ${player.wins}
-            · 누적 요트 ${player.yachtRolls}
-            · 이번 게임 요트 ${player.gameYachtRolls}
+            ${state.language === "ko"
+              ? `승 ${player.wins} · 누적 요트 ${player.yachtRolls} · 이번 게임 요트 ${player.gameYachtRolls}`
+              : `Wins ${player.wins} · Lifetime Yahtzees ${player.yachtRolls} · This game ${player.gameYachtRolls}`}
           </small>
         </div>
         <strong class="player-score-total">${totalFor(player.userId)}점</strong>
@@ -2519,14 +2761,14 @@ function renderScoreTable() {
       <div class="player-score-sections">
         <section class="player-score-section">
           <div class="score-section-label">
-            <span>UPPER</span>
+            <span>${tr("상단", "UPPER")}</span>
           </div>
           <div class="player-score-upper"></div>
         </section>
 
         <section class="player-score-section">
           <div class="score-section-label lower-label">
-            <span>LOWER</span>
+            <span>${tr("하단", "LOWER")}</span>
           </div>
           <div class="player-score-lower"></div>
         </section>
@@ -2546,16 +2788,16 @@ function renderScoreTable() {
 
     upperContainer.appendChild(
       scoreSummaryRow(
-        "상단 합계",
-        "63점 이상이면 보너스",
+        tr("상단 합계", "Upper subtotal"),
+        tr("63점 이상이면 보너스", "Bonus at 63+"),
         `${upperSubtotal} / 63`
       )
     );
 
     upperContainer.appendChild(
       scoreSummaryRow(
-        "상단 보너스",
-        "63점 이상 +35",
+        tr("상단 보너스", "Upper bonus"),
+        tr("63점 이상 +35", "63+ gives +35"),
         upperBonus ? "+35" : "0",
         upperBonus ? "bonus-earned" : ""
       )
@@ -2571,8 +2813,8 @@ function renderScoreTable() {
 
     lowerContainer.appendChild(
       scoreSummaryRow(
-        "추가 Yahtzee 보너스",
-        "+100 × 추가 Yahtzee",
+        tr("추가 요트 보너스", "Additional Yahtzee bonus"),
+        tr("추가 요트마다 +100", "+100 for each additional Yahtzee"),
         yachtBonus ? `+${yachtBonus}` : "0",
         yachtBonus ? "bonus-earned" : ""
       )
@@ -2588,15 +2830,21 @@ function renderGameHud() {
   el("gameModeBadge").classList.toggle("hidden", !state.isSpectator);
 
   el("gameHelpText").textContent = state.isSpectator
-    ? "관전 모드입니다. 게임 상태를 실시간으로 볼 수 있고 채팅만 보낼 수 있습니다."
-    : "자신의 차례에만 주사위를 굴릴 수 있습니다. 주사위를 누르면 고정되며, 점수표의 한 항목을 선택하면 다음 플레이어로 차례가 넘어갑니다.";
+    ? tr(
+        "관전 모드입니다. 게임 상태를 실시간으로 볼 수 있고 채팅만 보낼 수 있습니다.",
+        "Spectator mode. You can watch the game state in real time and use chat only."
+      )
+    : tr(
+        "자신의 차례에만 주사위를 굴릴 수 있습니다. 주사위를 누르면 고정되며, 점수표의 한 항목을 선택하면 다음 플레이어로 차례가 넘어갑니다.",
+        "Roll only on your turn. Click a die to hold it, then choose a score category to pass the turn."
+      );
 
   const used = Object.keys(playerScoreMap(player.userId)).length;
 
   el("currentPlayerText").textContent = player.username;
   el("roundText").textContent = `${Math.min(used + 1, 12)} / 12`;
   el("rollsText").textContent = state.gameState.rolls_left;
-  el("scoreSheetPlayer").textContent = "모든 플레이어 점수표";
+  el("scoreSheetPlayer").textContent = tr("모든 플레이어 점수표", "All player score sheets");
 
   const me = state.roomPlayers.find(
     roomPlayer => roomPlayer.userId === currentUserId()
@@ -2612,20 +2860,20 @@ function renderGameHud() {
     state.gameState.finished ||
     state.diceAnimating;
 
-  rollBtn.textContent = state.gameState.has_rolled ? "다시 굴리기" : "주사위 굴리기";
+  rollBtn.textContent = state.gameState.has_rolled ? tr("다시 굴리기", "Roll again") : tr("주사위 굴리기", "Roll dice");
 
   if (state.gameState.finished) {
-    el("statusText").textContent = "게임이 종료되었습니다.";
+    el("statusText").textContent = tr("게임이 종료되었습니다.", "The game has ended.");
   } else if (state.isSpectator) {
     el("statusText").textContent =
-      `${player.username}님의 차례를 관전 중입니다. 게임 조작은 할 수 없습니다.`;
+      state.language === "ko" ? `${player.username}님의 차례를 관전 중입니다. 게임 조작은 할 수 없습니다.` : `Watching ${player.username}'s turn. Game controls are disabled.`;
   } else if (isMyTurn()) {
     el("statusText").textContent =
       state.gameState.rolls_left > 0
-        ? "자신의 차례입니다."
-        : "굴리기를 모두 사용했습니다. 점수 항목을 선택하세요.";
+        ? tr("자신의 차례입니다.", "It is your turn.")
+        : tr("굴리기를 모두 사용했습니다. 점수 항목을 선택하세요.", "You have used all rolls. Choose a score category.");
   } else {
-    el("statusText").textContent = `${player.username}님의 차례를 기다리는 중입니다.`;
+    el("statusText").textContent = state.language === "ko" ? `${player.username}님의 차례를 기다리는 중입니다.` : `Waiting for ${player.username}'s turn.`;
   }
 }
 
@@ -2645,21 +2893,22 @@ async function rollDice() {
   // Immediately hide every rerolled old face and start indefinite 3D spinning.
   // Held dice remain visible and unchanged.
   beginPendingRoll(heldBefore);
+  startDiceRollSound();
 
   el("rollBtn").disabled = true;
-  el("statusText").textContent = "주사위가 굴러가는 중입니다...";
+  el("statusText").textContent = tr("주사위가 굴러가는 중입니다...", "Rolling dice...");
 
   try {
-    const { data, error } = await db.rpc("roll_yacht_dice", {
+    const { data, error } = await db.rpc("roll_yacht_dice_v2", {
       p_room_id: state.activeRoom.id
     });
 
     if (error) throw error;
 
-    const targetValues = Array.isArray(data) ? data : null;
+    const targetValues = Array.isArray(data?.dice) ? data.dice : null;
     await loadGameData();
 
-    if (isYahtzeeDice(state.gameState?.dice)) {
+    if (data?.is_yahtzee === true) {
       await Promise.all([
         loadRoomPlayers(),
         loadProfile()
@@ -2671,12 +2920,16 @@ async function rollDice() {
       heldBefore,
       diceBefore
     );
+
+    maybeCelebrateServerConfirmedYacht();
   } catch (error) {
     console.error(error);
+    stopDiceRollSound();
     state.displayDice = [...diceBefore];
     renderDice(state.displayDice, heldBefore);
-    showToast(error.message || "주사위를 굴리지 못했습니다.");
+    showToast(error.message || tr("주사위를 굴리지 못했습니다.", "Could not roll the dice."));
   } finally {
+    stopDiceRollSound();
     state.diceAnimating = false;
     state.busy = false;
     if (state.page === "game") renderGame();
@@ -2708,7 +2961,7 @@ async function chooseScore(category) {
     }
   } catch (error) {
     console.error(error);
-    showToast(error.message || "점수를 확정하지 못했습니다.");
+    showToast(error.message || tr("점수를 확정하지 못했습니다.", "Could not confirm the score."));
   } finally {
     state.busy = false;
   }
@@ -2723,7 +2976,8 @@ async function handleGameRefresh() {
         current_seat: state.gameState.current_seat,
         dice: [...(state.gameState.dice || [1, 1, 1, 1, 1])],
         held: [...(state.gameState.held || [false, false, false, false, false])],
-        has_rolled: Boolean(state.gameState.has_rolled)
+        has_rolled: Boolean(state.gameState.has_rolled),
+        last_roll_id: Number(state.gameState.last_roll_id || 0)
       }
     : null;
 
@@ -2750,9 +3004,7 @@ async function handleGameRefresh() {
   const remoteRollDetected =
     previous &&
     !state.diceAnimating &&
-    previous.current_seat === state.gameState.current_seat &&
-    state.gameState.rolls_left < previous.rolls_left &&
-    state.gameState.has_rolled;
+    Number(state.gameState.last_roll_id || 0) > previous.last_roll_id;
 
   if (remoteRollDetected) {
     state.diceAnimating = true;
@@ -2761,6 +3013,7 @@ async function handleGameRefresh() {
     renderGameHud();
 
     beginPendingRoll(previous.held);
+    startDiceRollSound();
 
     await new Promise(resolve =>
       requestAnimationFrame(resolve)
@@ -2772,7 +3025,9 @@ async function handleGameRefresh() {
       previous.dice
     );
 
+    stopDiceRollSound();
     state.diceAnimating = false;
+    maybeCelebrateServerConfirmedYacht();
   }
 
   renderGame();
@@ -2791,10 +3046,10 @@ function setFeedbackAvailability() {
 
   if (!enabled) {
     el("feedbackBody").placeholder =
-      "로그인 후 개발자에게 피드백을 보낼 수 있습니다.";
+      tr("로그인 후 개발자에게 피드백을 보낼 수 있습니다.", "Sign in to send feedback to the developer.");
   } else {
     el("feedbackBody").placeholder =
-      "개발자에게 전달할 내용을 입력하세요.";
+      tr("개발자에게 전달할 내용을 입력하세요.", "Enter feedback for the developer.");
   }
 }
 
@@ -2808,7 +3063,7 @@ async function submitFeedback(event) {
 
   if (!isLoggedIn()) {
     navigate("account");
-    showToast("로그인 후 피드백을 보낼 수 있습니다.");
+    showToast(tr("로그인 후 피드백을 보낼 수 있습니다.", "Sign in to send feedback."));
     return;
   }
 
@@ -2817,12 +3072,12 @@ async function submitFeedback(event) {
   const button = el("feedbackSubmitBtn");
 
   if (!body) {
-    showToast("피드백 내용을 입력해 주세요.");
+    showToast(tr("피드백 내용을 입력해 주세요.", "Enter a feedback message."));
     return;
   }
 
   button.disabled = true;
-  button.textContent = "보내는 중...";
+  button.textContent = tr("보내는 중...", "Sending...");
 
   try {
     const { error } = await db.rpc("submit_feedback", {
@@ -2834,13 +3089,13 @@ async function submitFeedback(event) {
 
     el("feedbackBody").value = "";
     updateFeedbackCharCount();
-    showToast("피드백을 개발자에게 보냈습니다.");
+    showToast(tr("피드백을 개발자에게 보냈습니다.", "Feedback sent to the developer."));
   } catch (error) {
     console.error("submit feedback:", error);
-    showToast(error.message || "피드백을 보내지 못했습니다.");
+    showToast(error.message || tr("피드백을 보내지 못했습니다.", "Could not send feedback."));
   } finally {
     button.disabled = false;
-    button.textContent = "피드백 보내기";
+    button.textContent = tr("피드백 보내기", "Send feedback");
     setFeedbackAvailability();
   }
 }
@@ -2862,9 +3117,11 @@ function setGlobalChatAvailability() {
   el("globalChatLoginHint").classList.toggle("hidden", enabled);
 
   if (!enabled) {
-    el("globalChatInput").placeholder = "로그인 후 전체 채팅에 참여할 수 있습니다";
+    el("globalChatInput").placeholder =
+      tr("로그인 후 전체 채팅에 참여할 수 있습니다", "Sign in to join the global chat");
   } else {
-    el("globalChatInput").placeholder = "모두에게 메시지를 보내세요";
+    el("globalChatInput").placeholder =
+      tr("모두에게 메시지를 보내세요", "Send a message to everyone");
   }
 }
 
@@ -2878,7 +3135,7 @@ async function loadGlobalMessages() {
   if (error) {
     console.error("global chat load:", error);
     el("globalChatMessages").innerHTML =
-      `<div class="chat-empty">전체 채팅을 불러오지 못했습니다.</div>`;
+      `<div class="chat-empty">${tr("전체 채팅을 불러오지 못했습니다.", "Could not load global chat.")}</div>`;
     return;
   }
 
@@ -2894,7 +3151,7 @@ function renderGlobalChat() {
 
   if (!state.globalMessages.length) {
     container.innerHTML =
-      `<div class="chat-empty">아직 전체 채팅 메시지가 없습니다.</div>`;
+      `<div class="chat-empty">${tr("아직 전체 채팅 메시지가 없습니다.", "No global chat messages yet.")}</div>`;
   } else {
     state.globalMessages.forEach(message => {
       const item = document.createElement("div");
@@ -2963,7 +3220,7 @@ async function sendGlobalChat(event) {
 
   if (!isLoggedIn()) {
     navigate("account");
-    showToast("로그인 후 전체 채팅을 사용할 수 있습니다.");
+    showToast(tr("로그인 후 전체 채팅을 사용할 수 있습니다.", "Sign in to use global chat."));
     return;
   }
 
@@ -2982,7 +3239,7 @@ async function sendGlobalChat(event) {
     if (error) throw error;
   } catch (error) {
     console.error("global chat send:", error);
-    showToast(error.message || "전체 채팅 메시지를 보내지 못했습니다.");
+    showToast(error.message || tr("전체 채팅 메시지를 보내지 못했습니다.", "Could not send the global chat message."));
   }
 }
 
@@ -3017,7 +3274,7 @@ async function sendGlobalEmoji(emoji) {
     if (error) throw error;
   } catch (error) {
     console.error("global emoji:", error);
-    showToast("이모티콘을 보내지 못했습니다.");
+    showToast(tr("이모티콘을 보내지 못했습니다.", "Could not send the emoji."));
   }
 }
 
@@ -3033,7 +3290,7 @@ async function sendRoomEmoji(emoji) {
     if (error) throw error;
   } catch (error) {
     console.error("room emoji:", error);
-    showToast("이모티콘을 보내지 못했습니다.");
+    showToast(tr("이모티콘을 보내지 못했습니다.", "Could not send the emoji."));
   }
 }
 
@@ -3122,7 +3379,9 @@ function initBgmControls() {
 
 function updateBgmButton() {
   const button = el("bgmToggleBtn");
-  button.textContent = state.bgmEnabled ? "♫ BGM ON" : "♫ BGM OFF";
+  button.textContent = state.language === "ko"
+    ? (state.bgmEnabled ? "♫ 배경음악 켬" : "♫ 배경음악 끔")
+    : (state.bgmEnabled ? "♫ BGM ON" : "♫ BGM OFF");
   button.classList.toggle("active", state.bgmEnabled);
 }
 
@@ -3174,7 +3433,7 @@ async function playSelectedBgm(restart = false) {
     console.error("BGM:", error);
     state.bgmEnabled = false;
     updateBgmButton();
-    showToast("BGM 음원 파일 audio/bgm.mp3가 필요합니다.");
+    showToast(tr("배경음악 파일 audio/bgm.mp3가 필요합니다.", "The BGM file audio/bgm.mp3 is required."));
   }
 }
 
@@ -3234,7 +3493,7 @@ function renderChat() {
   container.innerHTML = "";
 
   if (!state.messages.length) {
-    container.innerHTML = `<div class="chat-empty">아직 메시지가 없습니다.</div>`;
+    container.innerHTML = `<div class="chat-empty">${tr("아직 메시지가 없습니다.", "No messages yet.")}</div>`;
   } else {
     state.messages.forEach(message => {
       const item = document.createElement("div");
@@ -3270,7 +3529,7 @@ async function sendChat(event) {
     if (error) throw error;
   } catch (error) {
     console.error(error);
-    showToast(error.message || "메시지를 보내지 못했습니다.");
+    showToast(error.message || tr("메시지를 보내지 못했습니다.", "Could not send the message."));
   }
 }
 
@@ -3363,13 +3622,13 @@ async function renderAdmin({ quiet = false } = {}) {
         second: "2-digit"
       });
 
-      badge.textContent = `● 자동 업데이트 ${now}`;
+      badge.textContent = state.language === "ko" ? `● 자동 업데이트 ${now}` : `● Auto updated ${now}`;
     }
   } catch (error) {
     console.error("admin dashboard:", error);
 
     if (!quiet) {
-      showToast("관리자 자료를 불러오지 못했습니다.");
+      showToast(tr("관리자 자료를 불러오지 못했습니다.", "Could not load administrator data."));
     }
   } finally {
     state.adminRefreshInFlight = false;
@@ -3380,13 +3639,13 @@ function renderAdminDashboard() {
   const s = data.summary || {};
 
   const metrics = [
-    ["전체 계정", s.total_accounts ?? 0],
-    ["대기방", s.waiting_rooms ?? 0],
-    ["진행 중", s.playing_rooms ?? 0],
-    ["완료 경기", s.finished_rooms ?? 0],
-    ["채팅", s.total_messages ?? 0],
-    ["피드백", s.total_feedback ?? 0],
-    ["경기 기록", s.total_matches ?? 0]
+    [tr("전체 계정", "Accounts"), s.total_accounts ?? 0],
+    [tr("대기방", "Waiting rooms"), s.waiting_rooms ?? 0],
+    [tr("진행 중", "Playing rooms"), s.playing_rooms ?? 0],
+    [tr("완료 경기", "Finished games"), s.finished_rooms ?? 0],
+    [tr("채팅", "Chat messages"), s.total_messages ?? 0],
+    [tr("피드백", "Feedback"), s.total_feedback ?? 0],
+    [tr("경기 기록", "Match records"), s.total_matches ?? 0]
   ];
 
   el("adminSummary").innerHTML = metrics
@@ -3403,7 +3662,13 @@ function renderAdminDashboard() {
   el("adminRooms").innerHTML = adminRoomsTable(data.rooms || []);
 
   el("adminMatches").innerHTML = adminTable(
-    ["사용자", "결과", "점수", "인원", "시간"],
+    [
+      tr("사용자", "User"),
+      tr("결과", "Result"),
+      tr("점수", "Score"),
+      tr("인원", "Players"),
+      tr("시간", "Time")
+    ],
     (data.matches || []).map(match => [
       match.username,
       match.result,
@@ -3414,7 +3679,12 @@ function renderAdminDashboard() {
   );
 
   el("adminMessages").innerHTML = adminTable(
-    ["방", "사용자", "내용", "시간"],
+    [
+      tr("방", "Room"),
+      tr("사용자", "User"),
+      tr("내용", "Message"),
+      tr("시간", "Time")
+    ],
     (data.messages || []).map(message => [
       message.room_name,
       message.sender_name,
@@ -3424,17 +3694,22 @@ function renderAdminDashboard() {
   );
 
   const feedbackKindLabels = {
-    bug: "버그",
-    feature: "기능 제안",
-    ui: "UI / 사용성",
-    other: "기타"
+    bug: tr("버그", "Bug"),
+    feature: tr("기능 제안", "Feature request"),
+    ui: tr("화면 / 사용성", "UI / usability"),
+    other: tr("기타", "Other")
   };
 
   el("adminFeedback").innerHTML = adminTable(
-    ["종류", "사용자", "내용", "시간"],
+    [
+      tr("종류", "Type"),
+      tr("사용자", "User"),
+      tr("내용", "Message"),
+      tr("시간", "Time")
+    ],
     (data.feedback || []).map(item => [
       feedbackKindLabels[item.kind] || item.kind,
-      item.username || "삭제된 사용자",
+      item.username || tr("삭제된 사용자", "Deleted user"),
       item.body,
       new Date(item.created_at).toLocaleString("ko-KR")
     ])
@@ -3444,20 +3719,20 @@ function renderAdminDashboard() {
 
 function adminUsersTable(users) {
   if (!users.length) {
-    return `<div class="empty-state"><span>표시할 사용자가 없습니다.</span></div>`;
+    return `<div class="empty-state"><span>${tr("표시할 사용자가 없습니다.", "No users to display.")}</span></div>`;
   }
 
   return `
     <table class="admin-table">
       <thead>
         <tr>
-          <th>아이디</th>
-          <th>권한</th>
-          <th>승</th>
-          <th>패</th>
-          <th>무</th>
-          <th>요트</th>
-          <th>관리</th>
+          <th>${tr("아이디", "ID")}</th>
+          <th>${tr("권한", "Role")}</th>
+          <th>${tr("승", "Wins")}</th>
+          <th>${tr("패", "Losses")}</th>
+          <th>${tr("무", "Draws")}</th>
+          <th>${tr("요트", "Yahtzees")}</th>
+          <th>${tr("관리", "Actions")}</th>
         </tr>
       </thead>
       <tbody>
@@ -3477,13 +3752,13 @@ function adminUsersTable(users) {
               <td>
                 ${
                   protectedAccount
-                    ? `<span class="admin-protected-label">보호 계정</span>`
+                    ? `<span class="admin-protected-label">${tr("보호 계정", "Protected")}</span>`
                     : `<button
                          type="button"
                          class="admin-action-btn danger"
                          data-admin-delete-user="${escapeHTML(user.id)}"
                          data-username="${escapeHTML(user.username)}"
-                       >계정 삭제</button>`
+                       >${tr("계정 삭제", "Delete account")}</button>`
                 }
               </td>
             </tr>
@@ -3496,19 +3771,19 @@ function adminUsersTable(users) {
 
 function adminRoomsTable(rooms) {
   if (!rooms.length) {
-    return `<div class="empty-state"><span>표시할 게임방이 없습니다.</span></div>`;
+    return `<div class="empty-state"><span>${tr("표시할 게임방이 없습니다.", "No rooms to display.")}</span></div>`;
   }
 
   return `
     <table class="admin-table">
       <thead>
         <tr>
-          <th>방</th>
-          <th>HOST</th>
-          <th>공개</th>
-          <th>상태</th>
-          <th>인원</th>
-          <th>관리</th>
+          <th>${tr("방", "Room")}</th>
+          <th>${tr("방장", "Host")}</th>
+          <th>${tr("공개", "Visibility")}</th>
+          <th>${tr("상태", "Status")}</th>
+          <th>${tr("인원", "Players")}</th>
+          <th>${tr("관리", "Actions")}</th>
         </tr>
       </thead>
       <tbody>
@@ -3516,7 +3791,7 @@ function adminRoomsTable(rooms) {
           <tr>
             <td>${escapeHTML(room.name)}</td>
             <td>${escapeHTML(room.host_username)}</td>
-            <td>${room.is_public ? "공개" : "비공개"}</td>
+            <td>${room.is_public ? tr("공개", "Public") : tr("비공개", "Private")}</td>
             <td>${escapeHTML(room.status)}</td>
             <td>${escapeHTML(`${room.player_count}/${room.max_players}`)}</td>
             <td>
@@ -3527,7 +3802,7 @@ function adminRoomsTable(rooms) {
                        class="admin-action-btn danger"
                        data-admin-end-room="${escapeHTML(room.id)}"
                        data-room-name="${escapeHTML(room.name)}"
-                     >게임 종료</button>`
+                     >${tr("게임 종료", "End game")}</button>`
                   : `<span class="admin-protected-label">—</span>`
               }
             </td>
@@ -3542,7 +3817,9 @@ async function adminForceEndRoom(roomId, roomName) {
   if (!isAdmin()) return;
 
   const ok = window.confirm(
-    `"${roomName}" 게임을 지금 강제로 종료하시겠습니까?\n현재 점수로 승패가 기록됩니다.`
+    state.language === "ko"
+      ? `"${roomName}" 게임을 지금 강제로 종료하시겠습니까?\n현재 점수로 승패가 기록됩니다.`
+      : `End "${roomName}" now?\nThe current scores will be recorded as the result.`
   );
 
   if (!ok) return;
@@ -3554,11 +3831,11 @@ async function adminForceEndRoom(roomId, roomName) {
 
     if (error) throw error;
 
-    showToast("게임을 종료했습니다.");
+    showToast(tr("게임을 종료했습니다.", "Game ended."));
     await renderAdmin();
   } catch (error) {
     console.error("admin force end:", error);
-    showToast(error.message || "게임을 종료하지 못했습니다.");
+    showToast(error.message || tr("게임을 종료하지 못했습니다.", "Could not end the game."));
   }
 }
 
@@ -3566,7 +3843,9 @@ async function adminDeleteUser(userId, username) {
   if (!isAdmin()) return;
 
   const ok = window.confirm(
-    `${username} 계정을 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`
+    state.language === "ko"
+      ? `${username} 계정을 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`
+      : `Delete the account ${username}?\nThis action cannot be undone.`
   );
 
   if (!ok) return;
@@ -3578,18 +3857,18 @@ async function adminDeleteUser(userId, username) {
 
     if (error) throw error;
 
-    showToast(`${username} 계정을 삭제했습니다.`);
+    showToast(state.language === "ko" ? `${username} 계정을 삭제했습니다.` : `Deleted account ${username}.`);
     await renderAdmin();
   } catch (error) {
     console.error("admin delete user:", error);
-    showToast(error.message || "계정을 삭제하지 못했습니다.");
+    showToast(error.message || tr("계정을 삭제하지 못했습니다.", "Could not delete the account."));
   }
 }
 
 
 function adminTable(headers, rows) {
   if (!rows.length) {
-    return `<div class="empty-state"><span>표시할 자료가 없습니다.</span></div>`;
+    return `<div class="empty-state"><span>${tr("표시할 자료가 없습니다.", "No data to display.")}</span></div>`;
   }
 
   return `
@@ -3610,9 +3889,9 @@ async function copyRoomCode() {
   if (!state.activeRoom) return;
   try {
     await navigator.clipboard.writeText(state.activeRoom.code);
-    showToast("방 코드를 복사했습니다.");
+    showToast(tr("방 코드를 복사했습니다.", "Room code copied."));
   } catch {
-    showToast(`방 코드: ${state.activeRoom.code}`);
+    showToast(state.language === "ko" ? `방 코드: ${state.activeRoom.code}` : `Room code: ${state.activeRoom.code}`);
   }
 }
 
@@ -3708,6 +3987,13 @@ el("leaveRoomBtn").addEventListener("click", leaveWaitingRoom);
 
 el("rollBtn").addEventListener("click", rollDice);
 
+document.addEventListener("pointerdown", event => {
+  const control = event.target.closest("button:not(:disabled), .score-row.selectable");
+  if (control) playClickSound();
+});
+
+el("languageToggleBtn").addEventListener("click", toggleLanguage);
+
 el("feedbackForm").addEventListener("submit", submitFeedback);
 el("feedbackBody").addEventListener("input", updateFeedbackCharCount);
 
@@ -3764,6 +4050,7 @@ window.addEventListener("beforeunload", () => {
 initEmojiPicker();
 initGlobalEmojiPicker();
 initBgmControls();
+applyLanguage({ rerender: false });
 renderGlobalChat();
 updateFeedbackCharCount();
 setFeedbackAvailability();
