@@ -9,73 +9,8 @@ const IS_CONFIGURED =
   !SUPABASE_URL.includes("PASTE_") &&
   !SUPABASE_PUBLISHABLE_KEY.includes("PASTE_");
 
-const AUTH_SESSION_MIRROR_PREFIX = "playground_auth_mirror::";
-
-const playgroundAuthStorage = {
-  getItem(key) {
-    let value = null;
-
-    try {
-      value = window.localStorage.getItem(key);
-    } catch {}
-
-    if (value !== null) {
-      try {
-        window.sessionStorage.setItem(
-          `${AUTH_SESSION_MIRROR_PREFIX}${key}`,
-          value
-        );
-      } catch {}
-
-      return value;
-    }
-
-    try {
-      return window.sessionStorage.getItem(
-        `${AUTH_SESSION_MIRROR_PREFIX}${key}`
-      );
-    } catch {
-      return null;
-    }
-  },
-
-  setItem(key, value) {
-    let saved = false;
-
-    try {
-      window.localStorage.setItem(key, value);
-      saved = true;
-    } catch (error) {
-      console.error("auth localStorage write:", error);
-    }
-
-    try {
-      window.sessionStorage.setItem(
-        `${AUTH_SESSION_MIRROR_PREFIX}${key}`,
-        value
-      );
-      saved = true;
-    } catch (error) {
-      console.error("auth sessionStorage write:", error);
-    }
-
-    if (!saved) {
-      throw new Error("브라우저에 로그인 세션을 저장할 수 없습니다.");
-    }
-  },
-
-  removeItem(key) {
-    try {
-      window.localStorage.removeItem(key);
-    } catch {}
-
-    try {
-      window.sessionStorage.removeItem(
-        `${AUTH_SESSION_MIRROR_PREFIX}${key}`
-      );
-    } catch {}
-  }
-};
+const MANUAL_SESSION_BACKUP_KEY =
+  "playground_supabase_session_backup_v13";
 
 const db = IS_CONFIGURED
   ? window.supabase.createClient(
@@ -85,12 +20,117 @@ const db = IS_CONFIGURED
         auth: {
           persistSession: true,
           autoRefreshToken: true,
-          detectSessionInUrl: true,
-          storage: playgroundAuthStorage
+          detectSessionInUrl: false,
+          storage: window.localStorage
         }
       }
     )
   : null;
+
+function saveManualSessionBackup(session) {
+  if (!session?.access_token || !session?.refresh_token) return;
+
+  try {
+    localStorage.setItem(
+      MANUAL_SESSION_BACKUP_KEY,
+      JSON.stringify({
+        access_token: session.access_token,
+        refresh_token: session.refresh_token,
+        expires_at: session.expires_at || null
+      })
+    );
+  } catch (error) {
+    console.error("manual session backup:", error);
+  }
+}
+
+function readManualSessionBackup() {
+  try {
+    const raw = localStorage.getItem(MANUAL_SESSION_BACKUP_KEY);
+    if (!raw) return null;
+
+    const saved = JSON.parse(raw);
+
+    if (!saved?.access_token || !saved?.refresh_token) {
+      return null;
+    }
+
+    return saved;
+  } catch (error) {
+    console.error("manual session read:", error);
+    return null;
+  }
+}
+
+function clearManualSessionBackup() {
+  try {
+    localStorage.removeItem(MANUAL_SESSION_BACKUP_KEY);
+  } catch {}
+}
+
+async function restoreAuthSession() {
+  // 1. First use Supabase's own persisted browser session.
+  try {
+    const {
+      data: { session },
+      error
+    } = await db.auth.getSession();
+
+    if (error) {
+      console.error("getSession on boot:", error);
+    }
+
+    if (session) {
+      saveManualSessionBackup(session);
+      return session;
+    }
+  } catch (error) {
+    console.error("getSession on boot:", error);
+  }
+
+  // 2. Fallback to the exact token pair saved at the last successful auth
+  //    event. setSession will refresh the pair if the access token expired.
+  const saved = readManualSessionBackup();
+  if (!saved) return null;
+
+  try {
+    const { data, error } = await db.auth.setSession({
+      access_token: saved.access_token,
+      refresh_token: saved.refresh_token
+    });
+
+    if (error) {
+      console.error("manual setSession restore:", error);
+
+      const message = String(error.message || "").toLowerCase();
+
+      // Only erase the backup when Supabase explicitly says the token pair
+      // is invalid. Network/transient failures must not log the player out.
+      if (
+        message.includes("refresh token") &&
+        (
+          message.includes("invalid") ||
+          message.includes("not found") ||
+          message.includes("already used")
+        )
+      ) {
+        clearManualSessionBackup();
+      }
+
+      return null;
+    }
+
+    if (data?.session) {
+      saveManualSessionBackup(data.session);
+      return data.session;
+    }
+  } catch (error) {
+    // Keep backup on a transient network problem.
+    console.error("manual session restore exception:", error);
+  }
+
+  return null;
+}
 
 const PAGE_STORAGE_KEY = "playground_current_page_v3";
 const SPECTATOR_STORAGE_KEY = "playground_spectator_room_v3";
@@ -163,66 +203,123 @@ function playClickSound() {
   osc.stop(now + 0.06);
 }
 
+function playDiceClack(ctx, strength = 1) {
+  const now = ctx.currentTime;
+  const master = ctx.createGain();
+
+  master.gain.setValueAtTime(0.0001, now);
+  master.gain.exponentialRampToValueAtTime(
+    0.05 * strength,
+    now + 0.003
+  );
+  master.gain.exponentialRampToValueAtTime(
+    0.0001,
+    now + 0.075
+  );
+
+  // Low plastic/wood body impact.
+  const body = ctx.createOscillator();
+  const bodyGain = ctx.createGain();
+
+  body.type = "sine";
+  body.frequency.setValueAtTime(
+    155 + Math.random() * 55,
+    now
+  );
+  body.frequency.exponentialRampToValueAtTime(
+    90 + Math.random() * 25,
+    now + 0.065
+  );
+
+  bodyGain.gain.setValueAtTime(0.75, now);
+  bodyGain.gain.exponentialRampToValueAtTime(
+    0.0001,
+    now + 0.07
+  );
+
+  // Short higher-frequency edge click.
+  const edge = ctx.createOscillator();
+  const edgeGain = ctx.createGain();
+
+  edge.type = "triangle";
+  edge.frequency.setValueAtTime(
+    520 + Math.random() * 180,
+    now
+  );
+  edge.frequency.exponentialRampToValueAtTime(
+    230 + Math.random() * 90,
+    now + 0.028
+  );
+
+  edgeGain.gain.setValueAtTime(0.24, now);
+  edgeGain.gain.exponentialRampToValueAtTime(
+    0.0001,
+    now + 0.032
+  );
+
+  body.connect(bodyGain);
+  edge.connect(edgeGain);
+  bodyGain.connect(master);
+  edgeGain.connect(master);
+  master.connect(ctx.destination);
+
+  body.start(now);
+  edge.start(now);
+  body.stop(now + 0.08);
+  edge.stop(now + 0.04);
+}
+
+function scheduleNextDiceClack(sound, immediate = false) {
+  if (!sound || state.rollSound !== sound) return;
+
+  const fire = () => {
+    if (state.rollSound !== sound) return;
+
+    playDiceClack(
+      sound.ctx,
+      0.55 + Math.random() * 0.5
+    );
+
+    scheduleNextDiceClack(sound, false);
+  };
+
+  if (immediate) {
+    fire();
+    return;
+  }
+
+  // Irregular impacts sound much closer to physical dice than looped noise.
+  const delay = 55 + Math.floor(Math.random() * 85);
+  sound.timer = window.setTimeout(fire, delay);
+}
+
 function startDiceRollSound() {
   stopDiceRollSound();
+
   const ctx = getAudioContext();
   if (!ctx) return;
 
-  const buffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.28), ctx.sampleRate);
-  const samples = buffer.getChannelData(0);
-  for (let i = 0; i < samples.length; i += 1) {
-    samples[i] = (Math.random() * 2 - 1) * (0.45 + Math.random() * 0.55);
-  }
+  const sound = {
+    ctx,
+    timer: null
+  };
 
-  const source = ctx.createBufferSource();
-  const filter = ctx.createBiquadFilter();
-  const gain = ctx.createGain();
-  source.buffer = buffer;
-  source.loop = true;
-  filter.type = "bandpass";
-  filter.frequency.value = 1450;
-  filter.Q.value = 0.8;
-  gain.gain.value = 0.045;
-  source.connect(filter);
-  filter.connect(gain);
-  gain.connect(ctx.destination);
-  source.start();
-
-  const clackTimer = window.setInterval(() => {
-    if (!state.rollSound) return;
-    const t0 = ctx.currentTime;
-    const osc = ctx.createOscillator();
-    const clickGain = ctx.createGain();
-    osc.type = "triangle";
-    osc.frequency.setValueAtTime(170 + Math.random() * 110, t0);
-    clickGain.gain.setValueAtTime(0.018 + Math.random() * 0.018, t0);
-    clickGain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.035);
-    osc.connect(clickGain);
-    clickGain.connect(ctx.destination);
-    osc.start(t0);
-    osc.stop(t0 + 0.04);
-  }, 105);
-
-  state.rollSound = { source, gain, clackTimer };
+  state.rollSound = sound;
+  scheduleNextDiceClack(sound, true);
 }
 
 function stopDiceRollSound() {
   const sound = state.rollSound;
   if (!sound) return;
-  clearInterval(sound.clackTimer);
-  try {
-    const ctx = state.audioContext;
-    if (ctx && sound.gain) {
-      const now = ctx.currentTime;
-      sound.gain.gain.cancelScheduledValues(now);
-      sound.gain.gain.setValueAtTime(Math.max(sound.gain.gain.value, 0.0001), now);
-      sound.gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.06);
-      sound.source.stop(now + 0.07);
-    } else {
-      sound.source.stop();
-    }
-  } catch {}
+
+  if (sound.timer) {
+    clearTimeout(sound.timer);
+  }
+
   state.rollSound = null;
+
+  // One final, slightly stronger landing impact.
+  playDiceClack(sound.ctx, 0.9);
 }
 
 function applyStaticLanguage() {
@@ -316,26 +413,26 @@ function categoryRule(category) {
 const BGM_AUDIO_SRC = "audio/bgm.mp3";
 
 const BGM_TRACKS = [
-  { title: "About That Oldie", artist: "Vibe Tracks", start: 0 },
-  { title: "Claudio The Worm", artist: "The Green Orbs", start: 113 },
-  { title: "Splashing Around", artist: "The Green Orbs", start: 234 },
-  { title: "Whistling Down the Road", artist: "Silent Partner", start: 389 },
-  { title: "At The Fair", artist: "The Green Orbs", start: 519 },
-  { title: "Bike Rides", artist: "The Green Orbs", start: 639 },
-  { title: "How it Began", artist: "Silent Partner", start: 751 },
-  { title: "Sugar Zone", artist: "Silent Partner", start: 933 },
-  { title: "Bubble Bath", artist: "The Green Orbs", start: 1047 },
-  { title: "If I Had a Chicken", artist: "Kevin MacLeod", start: 1233 },
-  { title: "Ponies and Balloons", artist: "The Green Orbs", start: 1372 },
-  { title: "Rainy Day Games", artist: "The Green Orbs", start: 1555 },
-  { title: "Beat Your Competition", artist: "Vibe Tracks", start: 1678 },
-  { title: "Blue Skies", artist: "Silent Partner", start: 1852 },
-  { title: "Spring In My Step", artist: "Silent Partner", start: 2015 },
-  { title: "Springtime Family Band", artist: "The Green Orbs", start: 2135 },
-  { title: "Mr Turtle", artist: "The Green Orbs", start: 2272 },
-  { title: "Mr Sunny Face", artist: "Wayne Jones", start: 2397 },
-  { title: "Dog and Pony Show", artist: "Silent Partner", start: 2501 },
-  { title: "7th Floor Tango", artist: "Silent Partner", start: 2593 }
+  { title: "About That Oldie", artist: "Vibe Tracks", start: 0, stamp: "00:00" },
+  { title: "Claudio The Worm", artist: "The Green Orbs", start: 113, stamp: "01:53" },
+  { title: "Splashing Around", artist: "The Green Orbs", start: 234, stamp: "03:54" },
+  { title: "Whistling Down the Road", artist: "Silent Partner", start: 389, stamp: "06:29" },
+  { title: "At The Fair", artist: "The Green Orbs", start: 519, stamp: "08:39" },
+  { title: "Bike Rides", artist: "The Green Orbs", start: 639, stamp: "10:39" },
+  { title: "How it Began", artist: "Silent Partner", start: 751, stamp: "12:31" },
+  { title: "Sugar Zone", artist: "Silent Partner", start: 933, stamp: "15:33" },
+  { title: "Bubble Bath", artist: "The Green Orbs", start: 1047, stamp: "17:27" },
+  { title: "If I Had a Chicken", artist: "Kevin MacLeod", start: 1222, stamp: "20:22" },
+  { title: "Ponies and Balloons", artist: "The Green Orbs", start: 1372, stamp: "22:52" },
+  { title: "Rainy Day Games", artist: "The Green Orbs", start: 1555, stamp: "25:55" },
+  { title: "Beat Your Competition", artist: "Vibe Tracks", start: 1678, stamp: "27:58" },
+  { title: "Blue Skies", artist: "Silent Partner", start: 1852, stamp: "30:52" },
+  { title: "Spring In My Step", artist: "Silent Partner", start: 2015, stamp: "33:35" },
+  { title: "Springtime Family Band", artist: "The Green Orbs", start: 2135, stamp: "35:35" },
+  { title: "Mr Turtle", artist: "The Green Orbs", start: 2272, stamp: "37:52" },
+  { title: "Mr Sunny Face", artist: "Wayne Jones", start: 2397, stamp: "39:57" },
+  { title: "Dog and Pony Show", artist: "Silent Partner", start: 2501, stamp: "41:41" },
+  { title: "7th Floor Tango", artist: "Silent Partner", start: 2593, stamp: "43:13" }
 ];
 
 const CHAT_EMOJIS = [
@@ -347,6 +444,7 @@ const CHAT_EMOJIS = [
 const state = {
   page: "home",
   language: preferredLanguage(),
+  authBooting: true,
   maxPlayers: 4,
   roomIsPublic: true,
   publicRooms: [],
@@ -372,6 +470,7 @@ const state = {
   rollSound: null,
   bgmEnabled: false,
   bgmTrackIndex: 0,
+  bgmSegmentMonitor: null,
   accountGuardPoller: null,
   accountGuardMisses: 0,
   adminPoller: null,
@@ -470,22 +569,8 @@ async function usernameToInternalEmail(username) {
   return `u_${hash.slice(0, 40)}@playground.example.com`;
 }
 
-let initialAuthResolved = false;
-let resolveInitialAuthSession = null;
-
-const initialAuthSessionPromise = new Promise(resolve => {
-  resolveInitialAuthSession = resolve;
-});
-
 let authListenerInstalled = false;
 let authSubscription = null;
-
-function resolveInitialSessionOnce(session) {
-  if (initialAuthResolved) return;
-
-  initialAuthResolved = true;
-  resolveInitialAuthSession(session || null);
-}
 
 function installAuthListener() {
   if (authListenerInstalled || !db) return;
@@ -495,20 +580,19 @@ function installAuthListener() {
   const {
     data: { subscription }
   } = db.auth.onAuthStateChange((event, session) => {
-    if (event === "INITIAL_SESSION") {
-      resolveInitialSessionOnce(session);
-    }
-
     if (session) {
       state.session = session;
+      saveManualSessionBackup(session);
       renderHeader();
 
-      // Keep this callback synchronous. Database/realtime work starts only
-      // after the Auth callback has returned.
+      // Do not start another Supabase request directly inside this callback.
       if (
-        event === "SIGNED_IN" ||
-        event === "TOKEN_REFRESHED" ||
-        event === "USER_UPDATED"
+        !state.authBooting &&
+        (
+          event === "SIGNED_IN" ||
+          event === "TOKEN_REFRESHED" ||
+          event === "USER_UPDATED"
+        )
       ) {
         window.setTimeout(() => {
           syncAuthUi(event, session).catch(error => {
@@ -520,15 +604,15 @@ function installAuthListener() {
       return;
     }
 
-    if (event !== "SIGNED_OUT") {
-      return;
-    }
+    // INITIAL_SESSION with null is not an explicit logout.
+    if (event !== "SIGNED_OUT") return;
 
     state.session = null;
     state.profile = null;
     stopAccountGuard();
     stopAdminAutoRefresh();
     cleanupRoomChannel();
+    clearManualSessionBackup();
 
     renderHeader();
     renderAccount();
@@ -545,40 +629,6 @@ function installAuthListener() {
   });
 
   authSubscription = subscription;
-}
-
-async function waitForInitialAuthSession() {
-  installAuthListener();
-
-  // Supabase documents INITIAL_SESSION as the storage-loaded initial state.
-  // A timeout fallback handles CDN/browser anomalies without changing storage.
-  const fallback = new Promise(resolve => {
-    window.setTimeout(async () => {
-      if (initialAuthResolved) return;
-
-      try {
-        const {
-          data: { session }
-        } = await db.auth.getSession();
-
-        resolveInitialSessionOnce(session);
-      } catch (error) {
-        console.error("initial session fallback:", error);
-        resolveInitialSessionOnce(null);
-      }
-
-      resolve(sessionFallbackValue());
-    }, 2500);
-  });
-
-  function sessionFallbackValue() {
-    return state.session || null;
-  }
-
-  return Promise.race([
-    initialAuthSessionPromise,
-    fallback
-  ]);
 }
 
 function savedPage() {
@@ -739,8 +789,14 @@ async function checkOwnAccountStillExists() {
     if (state.accountGuardMisses < 2) return;
 
     stopAccountGuard();
-    showToast(tr("계정이 더 이상 존재하지 않아 로그아웃됩니다.", "This account no longer exists. Signing out."));
-        await db.auth.signOut({ scope: "local" });
+    clearManualSessionBackup();
+    showToast(
+      tr(
+        "계정이 더 이상 존재하지 않아 로그아웃됩니다.",
+        "This account no longer exists. Signing out."
+      )
+    );
+    await db.auth.signOut({ scope: "local" });
   } catch (error) {
     console.error("account guard:", error);
   }
@@ -894,10 +950,12 @@ async function init() {
 
   const requestedPage = savedPage();
 
-  // Install the listener before doing any application initialization.
-  // We then wait for Supabase's storage-backed INITIAL_SESSION.
-  const session = await waitForInitialAuthSession();
+  // Register the auth listener first, then restore deterministically.
+  installAuthListener();
+
+  const session = await restoreAuthSession();
   state.session = session;
+  state.authBooting = false;
 
   if (session) {
     await loadProfile();
@@ -1285,7 +1343,13 @@ async function login(event) {
     });
 
     if (error) throw error;
-    if (!data?.session) throw new Error("로그인 세션이 없습니다.");
+    if (!data?.session) {
+      throw new Error(
+        tr("로그인 세션이 없습니다.", "No login session was returned.")
+      );
+    }
+
+    saveManualSessionBackup(data.session);
 
     // Explicitly update Playground state from the session returned by Auth.
     // This avoids depending on onAuthStateChange for the visible login state.
@@ -1310,6 +1374,7 @@ async function login(event) {
 
     if (current?.session) {
       state.session = current.session;
+      saveManualSessionBackup(current.session);
       message.textContent =
         "로그인은 되었지만 프로필을 불러오지 못했습니다. 페이지를 새로고침해 주세요.";
       renderHeader();
@@ -1339,6 +1404,7 @@ async function logout() {
   state.globalMessages = [];
   state.isSpectator = false;
   rememberSpectatorRoom(null);
+  clearManualSessionBackup();
   await db.auth.signOut({ scope: "local" });
   navigate("home");
 }
@@ -3332,9 +3398,60 @@ function isEmojiOnlyMessage(text) {
   }
 }
 
+function selectedBgmTrack() {
+  return BGM_TRACKS[state.bgmTrackIndex] || BGM_TRACKS[0];
+}
+
+function selectedBgmEnd(audio) {
+  const next = BGM_TRACKS[state.bgmTrackIndex + 1];
+
+  if (next) return next.start;
+
+  return Number.isFinite(audio.duration)
+    ? audio.duration
+    : Infinity;
+}
+
+function stopBgmSegmentMonitor() {
+  if (state.bgmSegmentMonitor !== null) {
+    cancelAnimationFrame(state.bgmSegmentMonitor);
+    state.bgmSegmentMonitor = null;
+  }
+}
+
+function startBgmSegmentMonitor() {
+  stopBgmSegmentMonitor();
+
+  const audio = el("bgmAudio");
+
+  const tick = () => {
+    if (!state.bgmEnabled || audio.paused) {
+      state.bgmSegmentMonitor = null;
+      return;
+    }
+
+    const track = selectedBgmTrack();
+    const end = selectedBgmEnd(audio);
+
+    // Keep playback strictly inside the selected chapter of the combined MP3.
+    if (
+      audio.currentTime < track.start - 0.15 ||
+      audio.currentTime >= end - 0.025
+    ) {
+      audio.currentTime = track.start;
+    }
+
+    state.bgmSegmentMonitor = requestAnimationFrame(tick);
+  };
+
+  state.bgmSegmentMonitor = requestAnimationFrame(tick);
+}
+
 function initBgmControls() {
   const select = el("bgmTrackSelect");
-  const savedTrack = Number(localStorage.getItem("playground_bgm_track") || 0);
+  const savedTrack = Number(
+    localStorage.getItem("playground_bgm_track") || 0
+  );
 
   state.bgmTrackIndex =
     Number.isInteger(savedTrack) &&
@@ -3346,7 +3463,14 @@ function initBgmControls() {
   select.innerHTML = BGM_TRACKS
     .map((track, index) => {
       const number = String(index + 1).padStart(2, "0");
-      return `<option value="${index}">${number}. ${escapeHTML(track.title)} — ${escapeHTML(track.artist)}</option>`;
+
+      return `
+        <option value="${index}">
+          ${number}. ${escapeHTML(track.title)}
+          — ${escapeHTML(track.artist)}
+          (${track.stamp})
+        </option>
+      `;
     })
     .join("");
 
@@ -3354,24 +3478,16 @@ function initBgmControls() {
 
   const audio = el("bgmAudio");
   audio.src = BGM_AUDIO_SRC;
-
-  audio.addEventListener("timeupdate", () => {
-    if (!state.bgmEnabled) return;
-
-    const current = BGM_TRACKS[state.bgmTrackIndex];
-    const next = BGM_TRACKS[state.bgmTrackIndex + 1];
-
-    if (next && audio.currentTime >= next.start - 0.08) {
-      audio.currentTime = current.start;
-    }
-  });
+  audio.preload = "metadata";
 
   audio.addEventListener("ended", () => {
     if (!state.bgmEnabled) return;
 
-    const current = BGM_TRACKS[state.bgmTrackIndex];
-    audio.currentTime = current.start;
-    audio.play().catch(() => {});
+    const track = selectedBgmTrack();
+    audio.currentTime = track.start;
+    audio.play()
+      .then(startBgmSegmentMonitor)
+      .catch(() => {});
   });
 
   updateBgmButton();
@@ -3379,14 +3495,18 @@ function initBgmControls() {
 
 function updateBgmButton() {
   const button = el("bgmToggleBtn");
+
   button.textContent = state.language === "ko"
     ? (state.bgmEnabled ? "♫ 배경음악 켬" : "♫ 배경음악 끔")
     : (state.bgmEnabled ? "♫ BGM ON" : "♫ BGM OFF");
+
   button.classList.toggle("active", state.bgmEnabled);
 }
 
 function waitForAudioMetadata(audio) {
-  if (audio.readyState >= 1) return Promise.resolve();
+  if (audio.readyState >= 1) {
+    return Promise.resolve();
+  }
 
   return new Promise((resolve, reject) => {
     const onLoaded = () => {
@@ -3404,43 +3524,67 @@ function waitForAudioMetadata(audio) {
       audio.removeEventListener("error", onError);
     };
 
-    audio.addEventListener("loadedmetadata", onLoaded, { once: true });
-    audio.addEventListener("error", onError, { once: true });
+    audio.addEventListener(
+      "loadedmetadata",
+      onLoaded,
+      { once: true }
+    );
+
+    audio.addEventListener(
+      "error",
+      onError,
+      { once: true }
+    );
+
     audio.load();
   });
 }
 
 async function playSelectedBgm(restart = false) {
   const audio = el("bgmAudio");
-  const track = BGM_TRACKS[state.bgmTrackIndex];
-  const next = BGM_TRACKS[state.bgmTrackIndex + 1];
+  const track = selectedBgmTrack();
+  const end = selectedBgmEnd(audio);
 
   try {
     await waitForAudioMetadata(audio);
 
     const outsideSelectedTrack =
       audio.currentTime < track.start ||
-      (next && audio.currentTime >= next.start);
+      audio.currentTime >= end;
 
     if (restart || outsideSelectedTrack) {
       audio.currentTime = track.start;
     }
 
     await audio.play();
+
     state.bgmEnabled = true;
     updateBgmButton();
+    startBgmSegmentMonitor();
   } catch (error) {
     console.error("BGM:", error);
+
     state.bgmEnabled = false;
+    stopBgmSegmentMonitor();
     updateBgmButton();
-    showToast(tr("배경음악 파일 audio/bgm.mp3가 필요합니다.", "The BGM file audio/bgm.mp3 is required."));
+
+    showToast(
+      tr(
+        "합본 배경음악 파일 audio/bgm.mp3가 필요합니다.",
+        "The combined BGM file audio/bgm.mp3 is required."
+      )
+    );
   }
 }
 
 function pauseBgm() {
   const audio = el("bgmAudio");
-  if (audio) audio.pause();
 
+  if (audio) {
+    audio.pause();
+  }
+
+  stopBgmSegmentMonitor();
   state.bgmEnabled = false;
   updateBgmButton();
 }
@@ -3457,16 +3601,24 @@ async function toggleBgm() {
 async function changeBgmTrack() {
   const index = Number(el("bgmTrackSelect").value);
 
-  if (!Number.isInteger(index) || index < 0 || index >= BGM_TRACKS.length) {
+  if (
+    !Number.isInteger(index) ||
+    index < 0 ||
+    index >= BGM_TRACKS.length
+  ) {
     return;
   }
 
   state.bgmTrackIndex = index;
-  localStorage.setItem("playground_bgm_track", String(index));
 
-  if (state.bgmEnabled) {
-    await playSelectedBgm(true);
-  }
+  localStorage.setItem(
+    "playground_bgm_track",
+    String(index)
+  );
+
+  // Selecting a song means: jump to that timestamp in the one combined MP3
+  // and start playing immediately.
+  await playSelectedBgm(true);
 }
 
 
