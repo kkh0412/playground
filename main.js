@@ -1175,12 +1175,19 @@ function faceTransform(value, extraX = 0, extraY = 0, extraZ = 0) {
   ].join(" ");
 }
 
-function renderDice() {
+function renderDice(diceOverride = null, heldOverride = null) {
   const area = el("diceArea");
   area.innerHTML = "";
 
-  const dice = state.gameState?.dice || [1, 1, 1, 1, 1];
-  const held = state.gameState?.held || [false, false, false, false, false];
+  const dice =
+    diceOverride ||
+    state.gameState?.dice ||
+    [1, 1, 1, 1, 1];
+
+  const held =
+    heldOverride ||
+    state.gameState?.held ||
+    [false, false, false, false, false];
 
   dice.forEach((value, index) => {
     const button = document.createElement("button");
@@ -1260,18 +1267,51 @@ function animateHeldDie(button, cube, value) {
   return pulse.finished.catch(() => {});
 }
 
-async function animateDiceRoll(targetValues, heldBefore = []) {
+async function animateDiceRoll(
+  targetValues,
+  heldBefore = [],
+  startValues = null
+) {
+  const safeTargets =
+    Array.isArray(targetValues) && targetValues.length === 5
+      ? targetValues.map(value => Number(value) || 1)
+      : [1, 1, 1, 1, 1];
+
+  const safeHeld =
+    Array.isArray(heldBefore) && heldBefore.length === 5
+      ? heldBefore.map(Boolean)
+      : [false, false, false, false, false];
+
+  const safeStart =
+    Array.isArray(startValues) && startValues.length === 5
+      ? startValues.map(value => Number(value) || 1)
+      : safeTargets;
+
+  // Critical sync fix:
+  // Always create a fresh, visible five-dice scene BEFORE the animation.
+  // Remote rolls therefore never depend on whatever DOM happened to exist
+  // when the Realtime event arrived.
+  renderDice(safeStart, safeHeld);
+
+  // Let the browser commit the newly created dice before starting Web Animations.
+  await new Promise(resolve =>
+    requestAnimationFrame(() =>
+      requestAnimationFrame(resolve)
+    )
+  );
+
   const buttons = [...el("diceArea").querySelectorAll(".dice3d-button")];
 
-  if (!buttons.length) {
-    renderDice();
+  if (buttons.length !== 5) {
+    console.error("Dice render failed: expected 5 dice, got", buttons.length);
+    renderDice(safeTargets, state.gameState?.held || safeHeld);
     return;
   }
 
   const animations = buttons.map((button, index) => {
     const cube = button.querySelector(".dice3d-cube");
     const shadow = button.querySelector(".dice3d-shadow");
-    const target = Number(targetValues[index]) || 1;
+    const target = safeTargets[index];
 
     if (!cube) return Promise.resolve();
 
@@ -1525,6 +1565,11 @@ async function rollDice() {
   state.diceAnimating = true;
 
   const heldBefore = [...(state.gameState.held || [false, false, false, false, false])];
+  const diceBefore = [...(state.gameState.dice || [1, 1, 1, 1, 1])];
+
+  // Keep all five dice visible immediately, before the server response arrives.
+  renderDice(diceBefore, heldBefore);
+
   el("rollBtn").disabled = true;
   el("statusText").textContent = "주사위가 굴러가는 중입니다...";
 
@@ -1540,7 +1585,8 @@ async function rollDice() {
 
     await animateDiceRoll(
       targetValues || state.gameState.dice,
-      heldBefore
+      heldBefore,
+      diceBefore
     );
   } catch (error) {
     console.error(error);
@@ -1577,7 +1623,9 @@ async function handleGameRefresh() {
     ? {
         rolls_left: state.gameState.rolls_left,
         current_seat: state.gameState.current_seat,
-        held: [...(state.gameState.held || [])]
+        dice: [...(state.gameState.dice || [1, 1, 1, 1, 1])],
+        held: [...(state.gameState.held || [false, false, false, false, false])],
+        has_rolled: Boolean(state.gameState.has_rolled)
       }
     : null;
 
@@ -1606,7 +1654,11 @@ async function handleGameRefresh() {
     renderScoreTable();
     renderGameHud();
 
-    await animateDiceRoll(state.gameState.dice, previous.held);
+    await animateDiceRoll(
+      state.gameState.dice,
+      previous.held,
+      previous.dice
+    );
 
     state.diceAnimating = false;
   }

@@ -1797,3 +1797,31 @@ input:focus {
     font-size: 34px;
   }
 }
+
+
+/* ============================================================
+   Dice visibility/sync hotfix
+   A die must be visible regardless of turn, HOLD, or disabled state.
+   ============================================================ */
+#diceArea .dice3d-button,
+#diceArea .dice3d-button:disabled,
+#diceArea .dice3d-button:not(.held),
+#diceArea .dice3d-button.held {
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+#diceArea .dice3d-stage,
+#diceArea .dice3d-cube,
+#diceArea .dice3d-face {
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+#diceArea .dice3d-button:not(.held) .dice3d-face {
+  border-color: rgba(16, 24, 40, .14);
+}
+
+#diceArea .dice3d-hold-label:empty {
+  visibility: hidden !important;
+}
