@@ -2759,3 +2759,35 @@ body.spectator-mode #rollBtn {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* ============================================================
+   Demo v9: waiting dice + automatic admin refresh
+   ============================================================ */
+
+/* Between turns and before the first roll, the full 3D cube tumbles forever. */
+#diceArea .dice3d-button.waiting .dice3d-static-face {
+  visibility: hidden !important;
+  opacity: 0 !important;
+}
+
+#diceArea .dice3d-button.waiting .dice3d-cube {
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+#diceArea .dice3d-button.waiting {
+  overflow: visible !important;
+}
+
+#diceArea .dice3d-button.waiting .dice3d-shadow {
+  visibility: visible !important;
+}
+
+.admin-auto-status:disabled {
+  opacity: 1;
+  cursor: default;
+  border-color: #abefc6;
+  background: #ecfdf3;
+  color: #067647;
+}

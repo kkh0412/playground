@@ -10,8 +10,23 @@ const IS_CONFIGURED =
   !SUPABASE_PUBLISHABLE_KEY.includes("PASTE_");
 
 const db = IS_CONFIGURED
-  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY)
+  ? window.supabase.createClient(
+      SUPABASE_URL,
+      SUPABASE_PUBLISHABLE_KEY,
+      {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: true,
+          storage: window.localStorage
+        }
+      }
+    )
   : null;
+
+const SESSION_BACKUP_KEY = "playground_auth_session_backup_v1";
+const PAGE_STORAGE_KEY = "playground_current_page_v1";
+const SPECTATOR_STORAGE_KEY = "playground_spectator_room_v1";
 
 const UPPER_CATEGORY_KEYS = [
   "ones", "twos", "threes", "fours", "fives", "sixes"
@@ -81,6 +96,7 @@ const state = {
   roomChannel: null,
   roomChannelRoomId: null,
   diceAnimating: false,
+  displayDice: null,
   optimisticHolds: {},
   holdVersions: [0, 0, 0, 0, 0],
   yahtzeeCelebrationTimer: null,
@@ -88,6 +104,8 @@ const state = {
   bgmEnabled: false,
   bgmTrackIndex: 0,
   accountGuardPoller: null,
+  adminPoller: null,
+  adminRefreshInFlight: false,
   toastTimer: null,
   busy: false
 };
@@ -182,6 +200,108 @@ async function usernameToInternalEmail(username) {
   return `u_${hash.slice(0, 40)}@playground.example.com`;
 }
 
+function saveSessionBackup(session) {
+  try {
+    if (session?.access_token && session?.refresh_token) {
+      localStorage.setItem(
+        SESSION_BACKUP_KEY,
+        JSON.stringify({
+          access_token: session.access_token,
+          refresh_token: session.refresh_token
+        })
+      );
+    }
+  } catch (error) {
+    console.error("session backup:", error);
+  }
+}
+
+function clearSessionBackup() {
+  try {
+    localStorage.removeItem(SESSION_BACKUP_KEY);
+  } catch {}
+}
+
+async function getPersistedSession() {
+  const {
+    data: { session },
+    error
+  } = await db.auth.getSession();
+
+  if (error) {
+    console.error("get persisted session:", error);
+  }
+
+  if (session) {
+    saveSessionBackup(session);
+    return session;
+  }
+
+  // Fallback for browsers/CDN-client transitions where Supabase's own
+  // storage key was not recovered, while the browser still has our copy.
+  try {
+    const raw = localStorage.getItem(SESSION_BACKUP_KEY);
+    if (!raw) return null;
+
+    const saved = JSON.parse(raw);
+
+    if (!saved?.access_token || !saved?.refresh_token) {
+      clearSessionBackup();
+      return null;
+    }
+
+    const { data, error: restoreError } = await db.auth.setSession({
+      access_token: saved.access_token,
+      refresh_token: saved.refresh_token
+    });
+
+    if (restoreError) {
+      console.error("restore persisted session:", restoreError);
+      clearSessionBackup();
+      return null;
+    }
+
+    if (data?.session) {
+      saveSessionBackup(data.session);
+      return data.session;
+    }
+  } catch (error) {
+    console.error("session restore:", error);
+    clearSessionBackup();
+  }
+
+  return null;
+}
+
+function savedPage() {
+  const page = sessionStorage.getItem(PAGE_STORAGE_KEY);
+
+  return ["home", "account", "lobby", "game", "admin"].includes(page)
+    ? page
+    : "home";
+}
+
+function rememberPage(page) {
+  try {
+    sessionStorage.setItem(PAGE_STORAGE_KEY, page);
+  } catch {}
+}
+
+function rememberSpectatorRoom(roomId) {
+  try {
+    if (roomId) sessionStorage.setItem(SPECTATOR_STORAGE_KEY, roomId);
+    else sessionStorage.removeItem(SPECTATOR_STORAGE_KEY);
+  } catch {}
+}
+
+function savedSpectatorRoom() {
+  try {
+    return sessionStorage.getItem(SPECTATOR_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
 function currentUserId() {
   return state.session?.user?.id || null;
 }
@@ -198,7 +318,8 @@ function isAdmin() {
   return state.profile?.role === "admin";
 }
 
-function navigate(page) {
+function navigate(page, options = {}) {
+  const { remember = true, scroll = true } = options;
   const leavingGame = state.page === "game" && page !== "game";
 
   if (leavingGame) {
@@ -215,11 +336,15 @@ function navigate(page) {
   }
 
   if (page === "admin" && !isAdmin()) {
-    page = "home";
     showToast("관리자 권한이 필요합니다.");
+    return;
   }
 
   state.page = page;
+
+  if (remember) {
+    rememberPage(page);
+  }
 
   Object.entries(pages).forEach(([name, node]) => {
     node.classList.toggle("active", name === page);
@@ -230,11 +355,12 @@ function navigate(page) {
   });
 
   if (page !== "lobby") stopPublicRoomPolling();
+  if (page !== "admin") stopAdminAutoRefresh();
 
   if (page === "home") refreshHome();
   if (page === "account") renderAccount();
   if (page === "lobby") refreshLobby();
-  if (page === "admin") renderAdmin();
+  if (page === "admin") startAdminAutoRefresh();
   if (page === "game") {
     if (!state.activeRoom || state.activeRoom.status !== "playing") {
       navigate("lobby");
@@ -244,7 +370,10 @@ function navigate(page) {
   }
 
   updatePresence();
-  window.scrollTo({ top: 0, behavior: "instant" });
+
+  if (scroll) {
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }
 }
 
 function renderHeader() {
@@ -327,13 +456,8 @@ async function syncAuthUi(event, session) {
   await renderAccount();
 
   startAccountGuard();
-  await clearStaleSpectatorSession();
   await refreshHome();
   await setupGlobalChat();
-
-  if (state.page === "admin" && !isAdmin()) {
-    navigate("home");
-  }
 
   updatePresence();
 }
@@ -344,6 +468,7 @@ async function applySignedInSession(session) {
   }
 
   state.session = session;
+  saveSessionBackup(session);
 
   // Do not wait for the auth event callback to update the UI.
   await loadProfile();
@@ -352,12 +477,83 @@ async function applySignedInSession(session) {
   await renderAccount();
 
   startAccountGuard();
-  await clearStaleSpectatorSession();
   await refreshHome();
   await setupGlobalChat();
   updatePresence();
 
   return state.profile;
+}
+
+async function restoreSpectatorRoom(roomId) {
+  if (!isLoggedIn() || !roomId) return false;
+
+  try {
+    const { data, error } = await db.rpc("spectate_yacht_room", {
+      p_room_id: roomId
+    });
+
+    if (error) throw error;
+
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row?.room_id) return false;
+
+    state.isSpectator = true;
+    state.activeRoom = {
+      id: row.room_id,
+      code: row.room_code,
+      status: row.room_status,
+      maxPlayers: row.max_players,
+      hostId: row.host_id,
+      name: row.room_name || "Yacht Dice",
+      isPublic: true
+    };
+
+    rememberSpectatorRoom(row.room_id);
+    return true;
+  } catch (error) {
+    console.error("restore spectator room:", error);
+    rememberSpectatorRoom(null);
+    return false;
+  }
+}
+
+async function restoreInitialPage(requestedPage) {
+  let page = requestedPage || "home";
+
+  if (!isLoggedIn()) {
+    if (page === "lobby" || page === "game" || page === "admin") {
+      page = "account";
+    }
+
+    navigate(page, { remember: false, scroll: false });
+    return;
+  }
+
+  if (page === "admin") {
+    page = isAdmin() ? "admin" : "home";
+  }
+
+  if (page === "game") {
+    if (state.activeRoom?.status === "playing") {
+      navigate("game", { remember: false, scroll: false });
+      return;
+    }
+
+    const spectatorRoomId = savedSpectatorRoom();
+
+    if (spectatorRoomId) {
+      const restored = await restoreSpectatorRoom(spectatorRoomId);
+
+      if (restored) {
+        navigate("game", { remember: false, scroll: false });
+        return;
+      }
+    }
+
+    page = "lobby";
+  }
+
+  navigate(page, { remember: false, scroll: false });
 }
 
 async function init() {
@@ -366,7 +562,8 @@ async function init() {
     return;
   }
 
-  const { data: { session } } = await db.auth.getSession();
+  const requestedPage = savedPage();
+  const session = await getPersistedSession();
   state.session = session;
 
   if (session) {
@@ -375,11 +572,15 @@ async function init() {
   }
 
   db.auth.onAuthStateChange((event, session) => {
-    // IMPORTANT:
-    // Do not await Supabase API calls inside onAuthStateChange.
-    // supabase-js can deadlock when another Supabase request is started
-    // directly from this callback.
+    // Keep this callback synchronous. Supabase currently documents a
+    // deadlock risk when async Supabase calls are awaited directly here.
     state.session = session;
+
+    if (session) {
+      saveSessionBackup(session);
+    } else if (event === "SIGNED_OUT") {
+      clearSessionBackup();
+    }
 
     if (!session) {
       state.profile = null;
@@ -398,11 +599,9 @@ async function init() {
         navigate("account");
       }
     } else {
-      // Make the signed-in state visible immediately.
       renderHeader();
     }
 
-    // Run database/realtime work only after the auth callback has returned.
     window.setTimeout(() => {
       syncAuthUi(event, session).catch(error => {
         console.error("auth state sync failed:", error);
@@ -417,13 +616,14 @@ async function init() {
   await setupGlobalChat();
 
   if (session) {
+    // Clean stale database spectator rows once per full reload. If this tab
+    // was actually spectating, restoreInitialPage re-registers it below.
     await clearStaleSpectatorSession();
     await refreshActiveRoom();
   }
 
-  navigate("home");
+  await restoreInitialPage(requestedPage);
 }
-
 async function initPresence() {
   const presenceKey =
     sessionStorage.getItem("playground_presence_key") ||
@@ -747,7 +947,8 @@ async function signup(event) {
     }
 
     showToast("계정이 생성되었습니다.");
-    navigate("home");
+    await renderAccount();
+    rememberPage("account");
   } catch (error) {
     console.error(error);
     message.textContent =
@@ -799,7 +1000,8 @@ async function login(event) {
       showToast(`${username}님, 로그인되었습니다.`);
     }
 
-    navigate("home");
+    await renderAccount();
+    rememberPage(state.page);
   } catch (error) {
     console.error("login failed:", error);
 
@@ -840,6 +1042,8 @@ async function logout() {
   state.messages = [];
   state.globalMessages = [];
   state.isSpectator = false;
+  rememberSpectatorRoom(null);
+  clearSessionBackup();
   await db.auth.signOut();
   navigate("home");
 }
@@ -1068,6 +1272,8 @@ async function spectatePublicRoom(roomId) {
       isPublic: true
     };
 
+    rememberSpectatorRoom(row.room_id);
+
     state.roomPlayers = [];
     state.gameState = null;
     state.scores = [];
@@ -1103,6 +1309,7 @@ async function leaveSpectatorRoom(roomId, silent = false) {
   } finally {
     cleanupRoomChannel();
     state.isSpectator = false;
+    rememberSpectatorRoom(null);
     state.activeRoom = null;
     state.roomPlayers = [];
     state.gameState = null;
@@ -1475,6 +1682,12 @@ async function loadGameData() {
   state.gameState = stateResult.data;
   state.scores = scoreResult.data || [];
 
+  if (!state.gameState.has_rolled) {
+    state.displayDice = null;
+  } else if (!state.displayDice && !state.diceAnimating) {
+    state.displayDice = [...(state.gameState.dice || [1, 1, 1, 1, 1])];
+  }
+
   if (state.gameState.finished || state.activeRoom.status === "finished") {
     await showGameOver();
   }
@@ -1541,7 +1754,11 @@ function renderGame() {
   el("gameRoomCode").textContent = state.activeRoom?.code || "------";
 
   renderPlayerStrip();
-  renderDice();
+
+  if (!state.diceAnimating) {
+    renderDice();
+  }
+
   renderScoreTable();
   renderGameHud();
   renderChat();
@@ -1699,12 +1916,111 @@ async function setHoldOptimistically(index, desiredHeld, version) {
   }
 }
 
+function shouldShowWaitingDice() {
+  return Boolean(
+    state.gameState &&
+    !state.gameState.finished &&
+    !state.gameState.has_rolled &&
+    !state.diceAnimating
+  );
+}
+
+function randomRotation() {
+  return {
+    x: Math.floor(Math.random() * 720) - 360,
+    y: Math.floor(Math.random() * 720) - 360,
+    z: Math.floor(Math.random() * 360) - 180
+  };
+}
+
+function startWaitingDiceTumble(area) {
+  const buttons = [...area.querySelectorAll(".dice3d-button.waiting")];
+
+  buttons.forEach((button, index) => {
+    const cube = button.querySelector(".dice3d-cube");
+    const stage = button.querySelector(".dice3d-stage");
+    const shadow = button.querySelector(".dice3d-shadow");
+
+    if (!cube || !stage) return;
+
+    const a = randomRotation();
+    const b = randomRotation();
+    const c = randomRotation();
+    const d = randomRotation();
+
+    cube.animate(
+      [
+        { transform: `rotateX(${a.x}deg) rotateY(${a.y}deg) rotateZ(${a.z}deg)` },
+        { transform: `rotateX(${b.x + 360}deg) rotateY(${b.y - 360}deg) rotateZ(${b.z}deg)` },
+        { transform: `rotateX(${c.x + 720}deg) rotateY(${c.y + 360}deg) rotateZ(${c.z + 180}deg)` },
+        { transform: `rotateX(${d.x + 1080}deg) rotateY(${d.y + 720}deg) rotateZ(${d.z + 360}deg)` }
+      ],
+      {
+        duration: 980 + Math.random() * 430,
+        delay: index * -87,
+        iterations: Infinity,
+        easing: "linear"
+      }
+    );
+
+    stage.animate(
+      [
+        { transform: "translate3d(0, 2px, 0)" },
+        { transform: `translate3d(${Math.random() * 6 - 3}px, -5px, 0)` },
+        { transform: `translate3d(${Math.random() * 6 - 3}px, 1px, 0)` }
+      ],
+      {
+        duration: 520 + Math.random() * 260,
+        delay: index * -53,
+        iterations: Infinity,
+        direction: "alternate",
+        easing: "ease-in-out"
+      }
+    );
+
+    if (shadow) {
+      shadow.animate(
+        [
+          { transform: "translateX(-50%) scale(.92)", opacity: .20 },
+          { transform: "translateX(-50%) scale(.66)", opacity: .08 },
+          { transform: "translateX(-50%) scale(1.02)", opacity: .22 }
+        ],
+        {
+          duration: 520 + Math.random() * 260,
+          delay: index * -53,
+          iterations: Infinity,
+          direction: "alternate",
+          easing: "ease-in-out"
+        }
+      );
+    }
+  });
+}
+
+function stopWaitingAnimations(buttons) {
+  buttons.forEach(button => {
+    [
+      button,
+      button.querySelector(".dice3d-stage"),
+      button.querySelector(".dice3d-cube"),
+      button.querySelector(".dice3d-shadow")
+    ].filter(Boolean).forEach(node => {
+      node.getAnimations().forEach(animation => animation.cancel());
+    });
+
+    button.classList.remove("waiting");
+  });
+}
+
 function renderDice(diceOverride = null, heldOverride = null) {
   const area = el("diceArea");
   area.innerHTML = "";
 
+  const waiting = !diceOverride && shouldShowWaitingDice();
+
   const dice =
     diceOverride ||
+    (!waiting && state.displayDice) ||
     state.gameState?.dice ||
     [1, 1, 1, 1, 1];
 
@@ -1716,7 +2032,8 @@ function renderDice(diceOverride = null, heldOverride = null) {
     button.type = "button";
     button.className = [
       "dice3d-button",
-      held[index] ? "held" : ""
+      held[index] ? "held" : "",
+      waiting ? "waiting" : ""
     ].filter(Boolean).join(" ");
 
     button.disabled =
@@ -1838,7 +2155,8 @@ function animateHeldDie(button, _cube, _value) {
 async function animateDiceRoll(
   targetValues,
   heldBefore = [],
-  startValues = null
+  startValues = null,
+  fromWaiting = false
 ) {
   const safeTargets =
     Array.isArray(targetValues) && targetValues.length === 5
@@ -1855,20 +2173,38 @@ async function animateDiceRoll(
       ? startValues.map(value => Number(value) || 1)
       : safeTargets;
 
-  // Critical sync fix:
-  // Always create a fresh, visible five-dice scene BEFORE the animation.
-  // Remote rolls therefore never depend on whatever DOM happened to exist
-  // when the Realtime event arrived.
-  renderDice(safeStart, safeHeld);
+  let buttons = [...el("diceArea").querySelectorAll(".dice3d-button")];
 
-  // Let the browser commit the newly created dice before starting Web Animations.
-  await new Promise(resolve =>
-    requestAnimationFrame(() =>
-      requestAnimationFrame(resolve)
-    )
-  );
+  const canReuseWaitingScene =
+    fromWaiting &&
+    buttons.length === 5 &&
+    buttons.every(button => button.classList.contains("waiting"));
 
-  const buttons = [...el("diceArea").querySelectorAll(".dice3d-button")];
+  if (canReuseWaitingScene) {
+    // Keep the continuously tumbling dice visible until the real server result
+    // is ready, then transition directly into the result animation.
+    stopWaitingAnimations(buttons);
+
+    buttons.forEach((button, index) => {
+      const cube = button.querySelector(".dice3d-cube");
+      if (!cube) return;
+
+      const start = randomRotation();
+      cube.style.transform =
+        `rotateX(${start.x}deg) rotateY(${start.y}deg) rotateZ(${start.z}deg)`;
+      cube.dataset.value = safeStart[index];
+    });
+  } else {
+    renderDice(safeStart, safeHeld);
+
+    await new Promise(resolve =>
+      requestAnimationFrame(() =>
+        requestAnimationFrame(resolve)
+      )
+    );
+
+    buttons = [...el("diceArea").querySelectorAll(".dice3d-button")];
+  }
 
   if (buttons.length !== 5) {
     console.error("Dice render failed: expected 5 dice, got", buttons.length);
@@ -2015,10 +2351,12 @@ async function animateDiceRoll(
 
   await Promise.all(animations);
 
-  // Return to a browser-stable static face after the 3D roll finishes.
-  // This makes hover completely independent of 3D backface compositing.
+  // Lock the visible result exactly once. Realtime/UI refreshes cannot show
+  // a different set of eyes between the 3D stop and the static face.
+  state.displayDice = [...safeTargets];
+
   renderDice(
-    safeTargets,
+    state.displayDice,
     state.gameState?.held || safeHeld
   );
 
@@ -2282,10 +2620,16 @@ async function rollDice() {
   clearOptimisticHolds();
 
   const heldBefore = [...(state.gameState.held || [false, false, false, false, false])];
-  const diceBefore = [...(state.gameState.dice || [1, 1, 1, 1, 1])];
+  const diceBefore = [
+    ...(state.displayDice || state.gameState.dice || [1, 1, 1, 1, 1])
+  ];
+  const fromWaiting = !state.gameState.has_rolled;
 
-  // Keep all five dice visible immediately, before the server response arrives.
-  renderDice(diceBefore, heldBefore);
+  // On the first roll of a turn, do not redraw/reset the dice here.
+  // The continuously tumbling waiting scene stays visible while the RPC runs.
+  if (!fromWaiting) {
+    renderDice(diceBefore, heldBefore);
+  }
 
   el("rollBtn").disabled = true;
   el("statusText").textContent = "주사위가 굴러가는 중입니다...";
@@ -2310,7 +2654,8 @@ async function rollDice() {
     await animateDiceRoll(
       targetValues || state.gameState.dice,
       heldBefore,
-      diceBefore
+      diceBefore,
+      fromWaiting
     );
   } catch (error) {
     console.error(error);
@@ -2371,6 +2716,7 @@ async function handleGameRefresh() {
     previous.current_seat !== state.gameState.current_seat
   ) {
     clearOptimisticHolds();
+    state.displayDice = null;
   }
 
   const remoteRollDetected =
@@ -2389,7 +2735,8 @@ async function handleGameRefresh() {
     await animateDiceRoll(
       state.gameState.dice,
       previous.held,
-      previous.dice
+      previous.dice,
+      !previous.has_rolled
     );
 
     state.diceAnimating = false;
@@ -2861,28 +3208,59 @@ async function showGameOver() {
 }
 
 
-async function renderAdmin() {
-  if (!isAdmin()) {
-    navigate("home");
-    return;
+function stopAdminAutoRefresh() {
+  if (state.adminPoller) {
+    clearInterval(state.adminPoller);
+    state.adminPoller = null;
   }
-
-  const summary = el("adminSummary");
-  summary.innerHTML =
-    `<article class="card admin-stat"><span>불러오는 중</span><strong>...</strong></article>`;
-
-  const { data, error } = await db.rpc("get_admin_dashboard");
-
-  if (error) {
-    console.error("admin dashboard:", error);
-    showToast("관리자 자료를 불러오지 못했습니다.");
-    return;
-  }
-
-  state.adminData = data || {};
-  renderAdminDashboard();
 }
 
+function startAdminAutoRefresh() {
+  stopAdminAutoRefresh();
+
+  renderAdmin({ quiet: false });
+
+  state.adminPoller = setInterval(() => {
+    if (state.page === "admin") {
+      renderAdmin({ quiet: true });
+    }
+  }, 2000);
+}
+
+async function renderAdmin({ quiet = false } = {}) {
+  if (!isAdmin() || state.adminRefreshInFlight) {
+    return;
+  }
+
+  state.adminRefreshInFlight = true;
+
+  const summary = el("adminSummary");
+
+  if (!quiet && !state.adminData) {
+    summary.innerHTML =
+      `<article class="card admin-stat"><span>불러오는 중</span><strong>...</strong></article>`;
+  }
+
+  try {
+    const { data, error } = await db.rpc("get_admin_dashboard");
+
+    if (error) throw error;
+
+    state.adminData = data || {};
+
+    if (state.page === "admin") {
+      renderAdminDashboard();
+    }
+  } catch (error) {
+    console.error("admin dashboard:", error);
+
+    if (!quiet) {
+      showToast("관리자 자료를 불러오지 못했습니다.");
+    }
+  } finally {
+    state.adminRefreshInFlight = false;
+  }
+}
 function renderAdminDashboard() {
   const data = state.adminData || {};
   const s = data.summary || {};
@@ -3165,7 +3543,9 @@ el("publicRoomsList").addEventListener("click", event => {
 });
 
 el("refreshPublicRoomsBtn").addEventListener("click", refreshPublicRooms);
-el("refreshAdminBtn").addEventListener("click", renderAdmin);
+el("refreshAdminBtn").addEventListener("click", () => {
+  renderAdmin({ quiet: true });
+});
 
 el("adminUsers").addEventListener("click", event => {
   const button = event.target.closest("[data-admin-delete-user]");
@@ -3241,6 +3621,7 @@ el("finishGameBtn").addEventListener("click", leaveGameScreen);
 window.addEventListener("beforeunload", () => {
   stopAccountGuard();
   stopPublicRoomPolling();
+  stopAdminAutoRefresh();
   cleanupGlobalChatChannel();
   if (state.presenceChannel) state.presenceChannel.untrack();
 });
