@@ -1126,63 +1126,105 @@ function renderPlayerStrip() {
 }
 
 const DIE_FACE_TRANSFORMS = {
-  1: { x: 0, y: 0 },
-  2: { x: -90, y: 0 },
-  3: { x: 0, y: -90 },
-  4: { x: 0, y: 90 },
-  5: { x: 90, y: 0 },
-  6: { x: 0, y: 180 }
+  1: { x: 0, y: 0, z: 0 },
+  2: { x: -90, y: 0, z: 0 },
+  3: { x: 0, y: -90, z: 0 },
+  4: { x: 0, y: 90, z: 0 },
+  5: { x: 90, y: 0, z: 0 },
+  6: { x: 0, y: 180, z: 0 }
 };
 
-const DIE_GLYPHS = ["⚀", "⚁", "⚂", "⚃", "⚄", "⚅"];
+const DIE_PIP_LAYOUTS = {
+  1: [5],
+  2: [1, 9],
+  3: [1, 5, 9],
+  4: [1, 3, 7, 9],
+  5: [1, 3, 5, 7, 9],
+  6: [1, 3, 4, 6, 7, 9]
+};
+
+function pipMarkup(value) {
+  const active = new Set(DIE_PIP_LAYOUTS[value] || []);
+  let html = "";
+
+  for (let position = 1; position <= 9; position += 1) {
+    html += `<span class="die-pip ${active.has(position) ? "active" : ""}" data-pip="${position}"></span>`;
+  }
+
+  return html;
+}
 
 function cubeFaceMarkup() {
   return `
-    <span class="cube-face cube-front">${DIE_GLYPHS[0]}</span>
-    <span class="cube-face cube-back">${DIE_GLYPHS[5]}</span>
-    <span class="cube-face cube-right">${DIE_GLYPHS[2]}</span>
-    <span class="cube-face cube-left">${DIE_GLYPHS[3]}</span>
-    <span class="cube-face cube-top">${DIE_GLYPHS[1]}</span>
-    <span class="cube-face cube-bottom">${DIE_GLYPHS[4]}</span>
+    <span class="dice3d-face dice3d-front" data-face="1">${pipMarkup(1)}</span>
+    <span class="dice3d-face dice3d-back" data-face="6">${pipMarkup(6)}</span>
+    <span class="dice3d-face dice3d-right" data-face="3">${pipMarkup(3)}</span>
+    <span class="dice3d-face dice3d-left" data-face="4">${pipMarkup(4)}</span>
+    <span class="dice3d-face dice3d-top" data-face="2">${pipMarkup(2)}</span>
+    <span class="dice3d-face dice3d-bottom" data-face="5">${pipMarkup(5)}</span>
   `;
 }
 
 function faceTransform(value, extraX = 0, extraY = 0, extraZ = 0) {
   const base = DIE_FACE_TRANSFORMS[value] || DIE_FACE_TRANSFORMS[1];
-  return `rotateX(${base.x + extraX}deg) rotateY(${base.y + extraY}deg) rotateZ(${extraZ}deg)`;
+
+  return [
+    `rotateX(${base.x + extraX}deg)`,
+    `rotateY(${base.y + extraY}deg)`,
+    `rotateZ(${base.z + extraZ}deg)`
+  ].join(" ");
 }
 
 function renderDice() {
   const area = el("diceArea");
   area.innerHTML = "";
 
-  (state.gameState.dice || [1, 1, 1, 1, 1]).forEach((value, index) => {
+  const dice = state.gameState?.dice || [1, 1, 1, 1, 1];
+  const held = state.gameState?.held || [false, false, false, false, false];
+
+  dice.forEach((value, index) => {
     const button = document.createElement("button");
-    button.className = `die die-3d ${state.gameState.held?.[index] ? "held" : ""}`;
+
+    button.type = "button";
+    button.className = [
+      "dice3d-button",
+      held[index] ? "held" : "",
+      state.diceAnimating ? "rolling" : ""
+    ].filter(Boolean).join(" ");
+
     button.disabled =
       !isMyTurn() ||
       !state.gameState.has_rolled ||
       state.gameState.finished ||
       state.diceAnimating;
+
     button.setAttribute("aria-label", `${index + 1}번째 주사위: ${value}`);
+    button.dataset.dieIndex = index;
 
     button.innerHTML = `
-      <span class="die-scene">
-        <span class="die-cube" data-index="${index}" style="transform:${faceTransform(value)}">
+      <span class="dice3d-stage">
+        <span class="dice3d-shadow" aria-hidden="true"></span>
+        <span class="dice3d-cube"
+              data-index="${index}"
+              data-value="${value}"
+              style="transform:${faceTransform(value)}">
           ${cubeFaceMarkup()}
         </span>
       </span>
-      <span class="die-hold-label">${state.gameState.held?.[index] ? "HOLD" : ""}</span>
+      <span class="dice3d-hold-label">${held[index] ? "HOLD" : ""}</span>
     `;
 
     button.addEventListener("click", async () => {
       if (!isMyTurn() || state.busy || state.diceAnimating) return;
+
       state.busy = true;
+
       try {
         const { error } = await db.rpc("toggle_yacht_hold", {
           p_room_id: state.activeRoom.id,
           p_die_index: index + 1
         });
+
         if (error) throw error;
       } catch (error) {
         console.error(error);
@@ -1196,52 +1238,171 @@ function renderDice() {
   });
 }
 
+function randomBetween(min, max) {
+  return min + Math.random() * (max - min);
+}
+
+function animateHeldDie(button, cube, value) {
+  cube.style.transform = faceTransform(value);
+
+  const pulse = button.animate(
+    [
+      { transform: "translateY(0) scale(1)" },
+      { transform: "translateY(-3px) scale(1.025)" },
+      { transform: "translateY(0) scale(1)" }
+    ],
+    {
+      duration: 280,
+      easing: "ease-out"
+    }
+  );
+
+  return pulse.finished.catch(() => {});
+}
+
 async function animateDiceRoll(targetValues, heldBefore = []) {
-  const cubes = [...el("diceArea").querySelectorAll(".die-cube")];
-  if (!cubes.length) {
+  const buttons = [...el("diceArea").querySelectorAll(".dice3d-button")];
+
+  if (!buttons.length) {
     renderDice();
     return;
   }
 
-  const animations = cubes.map((cube, index) => {
-    const value = targetValues[index] || 1;
+  const animations = buttons.map((button, index) => {
+    const cube = button.querySelector(".dice3d-cube");
+    const shadow = button.querySelector(".dice3d-shadow");
+    const target = Number(targetValues[index]) || 1;
+
+    if (!cube) return Promise.resolve();
 
     if (heldBefore[index]) {
-      cube.style.transform = faceTransform(value);
-      return Promise.resolve();
+      return animateHeldDie(button, cube, target);
     }
 
-    const base = DIE_FACE_TRANSFORMS[value] || DIE_FACE_TRANSFORMS[1];
-    const spinX = 720 + Math.floor(Math.random() * 4) * 360;
-    const spinY = 720 + Math.floor(Math.random() * 4) * 360;
-    const spinZ = (Math.floor(Math.random() * 5) - 2) * 360;
-    const duration = 800 + Math.floor(Math.random() * 350);
+    button.classList.add("rolling");
 
-    const animation = cube.animate(
+    const base = DIE_FACE_TRANSFORMS[target] || DIE_FACE_TRANSFORMS[1];
+
+    // Every roll uses a different physical-looking trajectory while the
+    // final orientation is fixed by the real server-generated die value.
+    const turnsX = 3 + Math.floor(Math.random() * 4);
+    const turnsY = 3 + Math.floor(Math.random() * 4);
+    const turnsZ = 1 + Math.floor(Math.random() * 3);
+
+    const directionX = Math.random() < 0.5 ? -1 : 1;
+    const directionY = Math.random() < 0.5 ? -1 : 1;
+    const directionZ = Math.random() < 0.5 ? -1 : 1;
+
+    const spinX = directionX * turnsX * 360;
+    const spinY = directionY * turnsY * 360;
+    const spinZ = directionZ * turnsZ * 360;
+
+    const sideways = randomBetween(-12, 12);
+    const sideways2 = randomBetween(-8, 8);
+    const jump = randomBetween(17, 27);
+    const duration = 900 + Math.floor(Math.random() * 260);
+    const delay = index * 42;
+
+    const startTransform =
+      cube.style.transform ||
+      faceTransform(Number(cube.dataset.value) || 1);
+
+    const cubeAnimation = cube.animate(
       [
-        { transform: cube.style.transform || faceTransform(1), offset: 0 },
         {
-          transform: `rotateX(${spinX * 0.45}deg) rotateY(${spinY * 0.5}deg) rotateZ(${spinZ * 0.35}deg)`,
-          offset: 0.45
+          transform: startTransform,
+          offset: 0
         },
         {
-          transform: `rotateX(${base.x + spinX}deg) rotateY(${base.y + spinY}deg) rotateZ(${spinZ}deg)`,
+          transform:
+            `rotateX(${spinX * 0.28}deg) ` +
+            `rotateY(${spinY * 0.31}deg) ` +
+            `rotateZ(${spinZ * 0.22}deg)`,
+          offset: 0.23
+        },
+        {
+          transform:
+            `rotateX(${spinX * 0.69}deg) ` +
+            `rotateY(${spinY * 0.72}deg) ` +
+            `rotateZ(${spinZ * 0.67}deg)`,
+          offset: 0.66
+        },
+        {
+          transform:
+            `rotateX(${base.x + spinX}deg) ` +
+            `rotateY(${base.y + spinY}deg) ` +
+            `rotateZ(${base.z + spinZ}deg)`,
           offset: 1
         }
       ],
       {
         duration,
-        easing: "cubic-bezier(.16,.72,.22,1)",
+        delay,
+        easing: "cubic-bezier(.16,.76,.22,1)",
         fill: "forwards"
       }
     );
 
-    return animation.finished
-      .catch(() => {})
-      .then(() => {
-        animation.cancel();
-        cube.style.transform = faceTransform(value);
-      });
+    const stageAnimation = button.animate(
+      [
+        {
+          transform: "translate3d(0, 0, 0) scale(1)",
+          offset: 0
+        },
+        {
+          transform: `translate3d(${sideways}px, ${-jump}px, 0) scale(1.06)`,
+          offset: 0.28
+        },
+        {
+          transform: `translate3d(${sideways2}px, -4px, 0) scale(.985)`,
+          offset: 0.78
+        },
+        {
+          transform: "translate3d(0, 0, 0) scale(1)",
+          offset: 1
+        }
+      ],
+      {
+        duration,
+        delay,
+        easing: "cubic-bezier(.2,.7,.25,1)"
+      }
+    );
+
+    const shadowAnimation = shadow
+      ? shadow.animate(
+          [
+            { transform: "translateX(-50%) scale(1)", opacity: 0.22 },
+            { transform: "translateX(-50%) scale(.58)", opacity: 0.08 },
+            { transform: "translateX(-50%) scale(1.08)", opacity: 0.25 },
+            { transform: "translateX(-50%) scale(1)", opacity: 0.22 }
+          ],
+          {
+            duration,
+            delay,
+            easing: "ease-in-out"
+          }
+        )
+      : null;
+
+    const all = [
+      cubeAnimation.finished.catch(() => {}),
+      stageAnimation.finished.catch(() => {})
+    ];
+
+    if (shadowAnimation) {
+      all.push(shadowAnimation.finished.catch(() => {}));
+    }
+
+    return Promise.all(all).then(() => {
+      cubeAnimation.cancel();
+      stageAnimation.cancel();
+      shadowAnimation?.cancel();
+
+      cube.style.transform = faceTransform(target);
+      cube.dataset.value = target;
+      button.classList.remove("rolling");
+    });
   });
 
   await Promise.all(animations);

@@ -1411,98 +1411,252 @@ input:focus {
   letter-spacing: .08em;
 }
 
-/* 3D dice */
-.dice-area {
-  perspective: 950px;
-  align-items: center;
+/* ============================================================
+   3D DICE v2
+   Isolated class names intentionally avoid the legacy .die rules.
+   ============================================================ */
+
+#diceArea.dice-area {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(68px, 1fr));
+  align-items: end;
+  gap: clamp(10px, 1.2vw, 18px);
+  margin: 34px 0 24px;
+  perspective: 1100px;
+  overflow: visible;
 }
 
-.die.die-3d {
+.dice3d-button {
+  position: relative;
   display: grid;
   place-items: center;
+  width: 100%;
   min-width: 0;
+  height: 112px;
   padding: 0;
-  overflow: visible;
   border: 0;
+  border-radius: 18px;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  overflow: visible;
+  isolation: isolate;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.dice3d-button:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.dice3d-button:not(:disabled):hover .dice3d-cube {
+  filter: brightness(1.025);
+}
+
+.dice3d-button:not(:disabled):hover .dice3d-stage {
+  transform: translateY(-2px);
+}
+
+.dice3d-button:focus-visible .dice3d-stage::after {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border: 3px solid rgba(109, 74, 255, .38);
+  border-radius: 20px;
+  pointer-events: none;
+}
+
+.dice3d-stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 86px;
+  height: 86px;
+  perspective: 620px;
+  transform-style: preserve-3d;
+  transition: transform .16s ease;
+}
+
+.dice3d-cube {
+  --dice-size: 62px;
+  --dice-half: calc(var(--dice-size) / 2);
+
+  position: relative;
+  width: var(--dice-size);
+  height: var(--dice-size);
+  transform-style: preserve-3d;
+  will-change: transform;
+  transition: transform .24s cubic-bezier(.2,.8,.2,1);
+  z-index: 2;
+}
+
+.dice3d-button.rolling .dice3d-cube {
+  transition: none;
+}
+
+.dice3d-face {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  width: var(--dice-size);
+  height: var(--dice-size);
+  padding: 8px;
+  border: 1px solid rgba(16, 24, 40, .14);
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 30% 18%, #ffffff 0 18%, transparent 44%),
+    linear-gradient(145deg, #ffffff, #f0f2f6);
+  box-shadow:
+    inset 1px 1px 0 rgba(255,255,255,.9),
+    inset -3px -4px 9px rgba(15,23,42,.08),
+    0 4px 10px rgba(15,23,42,.09);
+  backface-visibility: hidden;
+  transform-style: preserve-3d;
+}
+
+.dice3d-front  { transform: rotateY(0deg) translateZ(var(--dice-half)); }
+.dice3d-back   { transform: rotateY(180deg) translateZ(var(--dice-half)); }
+.dice3d-right  { transform: rotateY(90deg) translateZ(var(--dice-half)); }
+.dice3d-left   { transform: rotateY(-90deg) translateZ(var(--dice-half)); }
+.dice3d-top    { transform: rotateX(90deg) translateZ(var(--dice-half)); }
+.dice3d-bottom { transform: rotateX(-90deg) translateZ(var(--dice-half)); }
+
+.die-pip {
+  display: block;
+  place-self: center;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
   background: transparent;
   box-shadow: none;
 }
 
-.die.die-3d:hover:not(:disabled) {
-  transform: translateY(-2px);
-  border-color: transparent;
-}
-
-.die-scene {
-  position: relative;
-  display: block;
-  width: clamp(52px, 6vw, 72px);
-  height: clamp(52px, 6vw, 72px);
-  perspective: 520px;
-}
-
-.die-cube {
-  --die-half: clamp(26px, 3vw, 36px);
-  position: absolute;
-  inset: 0;
-  display: block;
-  transform-style: preserve-3d;
-  transition: transform .28s ease;
-  will-change: transform;
-}
-
-.cube-face {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  border: 2px solid #d9dee7;
-  border-radius: 13px;
+.die-pip.active {
   background:
-    radial-gradient(circle at 30% 20%, rgba(255,255,255,.96), rgba(244,246,249,.96));
-  color: #182230;
+    radial-gradient(circle at 34% 28%, #475467 0 13%, #182230 30% 100%);
   box-shadow:
-    inset 0 0 18px rgba(15, 23, 42, 0.05),
-    0 5px 12px rgba(15, 23, 42, 0.08);
-  font-size: clamp(36px, 5vw, 52px);
-  line-height: 1;
-  backface-visibility: hidden;
+    inset 0 1px 1px rgba(255,255,255,.22),
+    0 1px 1px rgba(15,23,42,.22);
 }
 
-.cube-front  { transform: rotateY(0deg) translateZ(var(--die-half)); }
-.cube-back   { transform: rotateY(180deg) translateZ(var(--die-half)); }
-.cube-right  { transform: rotateY(90deg) translateZ(var(--die-half)); }
-.cube-left   { transform: rotateY(-90deg) translateZ(var(--die-half)); }
-.cube-top    { transform: rotateX(90deg) translateZ(var(--die-half)); }
-.cube-bottom { transform: rotateX(-90deg) translateZ(var(--die-half)); }
-
-.die.held .cube-face {
-  border-color: #8f78ff;
-  background: #f0ebff;
-  box-shadow:
-    inset 0 0 18px rgba(109, 74, 255, 0.08),
-    0 6px 18px rgba(109, 74, 255, 0.12);
+.dice3d-shadow {
+  position: absolute;
+  left: 50%;
+  bottom: 5px;
+  width: 54px;
+  height: 13px;
+  border-radius: 50%;
+  background: rgba(15, 23, 42, .22);
+  filter: blur(6px);
+  transform: translateX(-50%);
+  transform-origin: center;
+  z-index: 0;
+  pointer-events: none;
 }
 
-.die.held::after {
-  content: none;
-}
-
-.die-hold-label {
-  min-height: 12px;
-  margin-top: 8px;
-  color: var(--purple);
-  font-size: 8px;
+.dice3d-hold-label {
+  position: absolute;
+  bottom: -1px;
+  min-height: 16px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: transparent;
+  font-size: 9px;
   font-weight: 950;
-  letter-spacing: .08em;
+  line-height: 1.2;
+  letter-spacing: .09em;
+  pointer-events: none;
 }
 
-.die.die-3d:disabled {
-  opacity: 1;
+.dice3d-button.held .dice3d-hold-label {
+  color: #6941c6;
+  background: #eee9ff;
 }
 
-.die.die-3d:disabled:not(.held) .die-cube {
-  filter: saturate(.75);
+.dice3d-button.held .dice3d-face {
+  border-color: rgba(109, 74, 255, .55);
+  background:
+    radial-gradient(circle at 30% 18%, #ffffff 0 18%, transparent 44%),
+    linear-gradient(145deg, #f9f7ff, #eae4ff);
+  box-shadow:
+    inset 1px 1px 0 rgba(255,255,255,.95),
+    inset -3px -4px 9px rgba(109,74,255,.10),
+    0 5px 14px rgba(109,74,255,.16);
+}
+
+.dice3d-button.held .die-pip.active {
+  background:
+    radial-gradient(circle at 34% 28%, #8066ff 0 13%, #4c32d6 32% 100%);
+}
+
+.dice3d-button.held .dice3d-shadow {
+  background: rgba(109, 74, 255, .2);
+}
+
+@media (max-width: 900px) {
+  #diceArea.dice-area {
+    grid-template-columns: repeat(5, minmax(54px, 1fr));
+    gap: 7px;
+  }
+
+  .dice3d-stage {
+    width: 68px;
+    height: 74px;
+  }
+
+  .dice3d-cube {
+    --dice-size: 52px;
+  }
+
+  .dice3d-face {
+    padding: 7px;
+    border-radius: 12px;
+  }
+
+  .die-pip {
+    width: 8px;
+    height: 8px;
+  }
+}
+
+@media (max-width: 560px) {
+  #diceArea.dice-area {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 3px;
+  }
+
+  .dice3d-button {
+    height: 88px;
+  }
+
+  .dice3d-stage {
+    width: 54px;
+    height: 62px;
+  }
+
+  .dice3d-cube {
+    --dice-size: 43px;
+  }
+
+  .dice3d-face {
+    padding: 6px;
+    border-radius: 10px;
+  }
+
+  .die-pip {
+    width: 6.5px;
+    height: 6.5px;
+  }
+
+  .dice3d-shadow {
+    width: 39px;
+    height: 10px;
+  }
 }
 
 /* Admin */
