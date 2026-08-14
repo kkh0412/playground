@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Yacht Dice Demo</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="app">
+    <section class="hero">
+      <div>
+        <p class="eyebrow">FIRST WEB GAME DEMO</p>
+        <h1>🎲 Yacht Dice</h1>
+        <p class="subtitle">
+          한 턴에 최대 3번 굴릴 수 있습니다.
+          원하는 주사위를 눌러 고정한 뒤 다시 굴려 보세요.
+        </p>
+      </div>
+      <button id="newGameBtn" class="secondary-btn">새 게임</button>
+    </section>
+
+    <section class="game-layout">
+      <div class="play-panel card">
+        <div class="turn-info">
+          <div>
+            <span class="label">라운드</span>
+            <strong id="roundText">1 / 12</strong>
+          </div>
+          <div>
+            <span class="label">남은 굴리기</span>
+            <strong id="rollsText">3</strong>
+          </div>
+        </div>
+
+        <div id="diceArea" class="dice-area" aria-label="주사위 영역"></div>
+
+        <div class="controls">
+          <button id="rollBtn" class="primary-btn">주사위 굴리기</button>
+          <p id="statusText" class="status">
+            첫 번째 굴리기를 시작하세요.
+          </p>
+        </div>
+
+        <div class="help">
+          <strong>조작법</strong>
+          <p>
+            굴린 뒤 주사위를 클릭하면 🔒 고정됩니다.
+            점수표에서 사용할 항목을 클릭하면 해당 라운드가 끝납니다.
+          </p>
+        </div>
+      </div>
+
+      <div class="score-panel card">
+        <div class="score-header">
+          <div>
+            <p class="eyebrow">SCORE SHEET</p>
+            <h2>점수표</h2>
+          </div>
+          <div class="total-box">
+            <span>총점</span>
+            <strong id="totalScore">0</strong>
+          </div>
+        </div>
+
+        <div id="scoreTable" class="score-table"></div>
+      </div>
+    </section>
+  </main>
+
+  <div id="gameOverModal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <p class="eyebrow">GAME OVER</p>
+      <h2>게임 종료!</h2>
+      <p>최종 점수</p>
+      <div id="finalScore" class="final-score">0</div>
+      <button id="playAgainBtn" class="primary-btn">다시 플레이</button>
+    </div>
+  </div>
+
+  <script src="main.js"></script>
+</body>
+</html>
