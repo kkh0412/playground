@@ -4,14 +4,14 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content="친구들과 함께 즐기는 온라인 미니게임 Playground" />
-  <title>대관련산양의 놀이터</title>
-  <link rel="stylesheet" href="style.css?v=20260814-dice-sync-1" />
+  <title>대관령산양의 놀이터</title>
+  <link rel="stylesheet" href="style.css?v=20260814-v5-1" />
 </head>
 <body>
   <header class="site-header">
-    <button class="brand" data-nav="home" aria-label="대관련산양의 놀이터 홈">
+    <button class="brand" data-nav="home" aria-label="대관령산양의 놀이터 홈">
       <span class="brand-mark">🐐</span>
-      <span>대관련산양의 놀이터</span>
+      <span>대관령산양의 놀이터</span>
     </button>
 
     <nav class="main-nav" aria-label="주 메뉴">
@@ -31,8 +31,8 @@
       <div class="home-shell">
         <section class="hero-panel">
           <div>
-            <p class="eyebrow">ONLINE MINI GAME HUB</p>
-            <h1>대관련산양의<br />놀이터</h1>
+            <p class="eyebrow">PLAYGROUND BY DGL GORAL</p>
+            <h1>대관령산양의<br />놀이터</h1>
             <p class="hero-copy">
               공개방에서 새로운 사람을 만나거나, 비공개방에서 친구들과 실시간으로 플레이하세요.
             </p>
@@ -309,7 +309,18 @@
       <div class="game-shell">
         <div class="game-topbar">
           <button id="leaveGameBtn" class="text-btn">← 홈으로</button>
-          <div class="game-room-code"><span id="gameRoomName">게임방</span> · 방 코드 <strong id="gameRoomCode">------</strong></div>
+
+          <div class="game-topbar-right">
+            <div class="bgm-player" aria-label="BGM 플레이어">
+              <button id="bgmToggleBtn" class="ghost-btn bgm-toggle" type="button">♫ BGM OFF</button>
+              <select id="bgmTrackSelect" class="bgm-select" aria-label="BGM 곡 선택"></select>
+            </div>
+
+            <div class="game-room-code">
+              <span id="gameRoomName">게임방</span> · 방 코드
+              <strong id="gameRoomCode">------</strong>
+            </div>
+          </div>
         </div>
 
         <section id="playerStrip" class="player-strip"></section>
@@ -373,7 +384,11 @@
             <div id="chatMessages" class="chat-messages" aria-live="polite"></div>
 
             <form id="chatForm" class="chat-form">
-              <input id="chatInput" maxlength="200" placeholder="메시지를 입력하세요" autocomplete="off" />
+              <div class="chat-input-wrap">
+                <button id="emojiToggleBtn" class="emoji-toggle-btn" type="button" aria-label="이모티콘 열기">☺</button>
+                <input id="chatInput" maxlength="200" placeholder="메시지를 입력하세요" autocomplete="off" />
+                <div id="emojiPicker" class="emoji-picker hidden" aria-label="이모티콘 선택"></div>
+              </div>
               <button class="primary-btn" type="submit">전송</button>
             </form>
           </aside>
@@ -459,9 +474,11 @@
     </div>
   </div>
 
+  <audio id="bgmAudio" preload="none"></audio>
+
   <div id="toast" class="toast hidden" aria-live="polite"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="main.js?v=20260814-dice-sync-1"></script>
+  <script src="main.js?v=20260814-v5-1"></script>
 </body>
 </html>

@@ -28,6 +28,38 @@ const categories = [
   { key: "yacht", name: "Yacht", rule: "5개 모두 같음 → 50점" }
 ];
 
+
+const BGM_AUDIO_SRC = "audio/bgm.mp3";
+
+const BGM_TRACKS = [
+  { title: "About That Oldie", artist: "Vibe Tracks", start: 0 },
+  { title: "Claudio The Worm", artist: "The Green Orbs", start: 113 },
+  { title: "Splashing Around", artist: "The Green Orbs", start: 234 },
+  { title: "Whistling Down the Road", artist: "Silent Partner", start: 389 },
+  { title: "At The Fair", artist: "The Green Orbs", start: 519 },
+  { title: "Bike Rides", artist: "The Green Orbs", start: 639 },
+  { title: "How it Began", artist: "Silent Partner", start: 751 },
+  { title: "Sugar Zone", artist: "Silent Partner", start: 933 },
+  { title: "Bubble Bath", artist: "The Green Orbs", start: 1047 },
+  { title: "If I Had a Chicken", artist: "Kevin MacLeod", start: 1233 },
+  { title: "Ponies and Balloons", artist: "The Green Orbs", start: 1372 },
+  { title: "Rainy Day Games", artist: "The Green Orbs", start: 1555 },
+  { title: "Beat Your Competition", artist: "Vibe Tracks", start: 1678 },
+  { title: "Blue Skies", artist: "Silent Partner", start: 1852 },
+  { title: "Spring In My Step", artist: "Silent Partner", start: 2015 },
+  { title: "Springtime Family Band", artist: "The Green Orbs", start: 2135 },
+  { title: "Mr Turtle", artist: "The Green Orbs", start: 2272 },
+  { title: "Mr Sunny Face", artist: "Wayne Jones", start: 2397 },
+  { title: "Dog and Pony Show", artist: "Silent Partner", start: 2501 },
+  { title: "7th Floor Tango", artist: "Silent Partner", start: 2593 }
+];
+
+const CHAT_EMOJIS = [
+  "😀","😆","😂","🤣","😊","😍","😎","🤔",
+  "😱","😭","😡","🥳","👍","👎","👏","🙏",
+  "🔥","✨","🎲","🎉","💯","❤️","🐐","🏆"
+];
+
 const state = {
   page: "home",
   maxPlayers: 4,
@@ -46,6 +78,9 @@ const state = {
   roomChannelRoomId: null,
   diceAnimating: false,
   adminData: null,
+  bgmEnabled: false,
+  bgmTrackIndex: 0,
+  accountGuardPoller: null,
   toastTimer: null,
   busy: false
 };
@@ -130,6 +165,9 @@ function isAdmin() {
 }
 
 function navigate(page) {
+  const leavingGame = state.page === "game" && page !== "game";
+  if (leavingGame) pauseBgm();
+
   if ((page === "lobby" || page === "game") && !isLoggedIn()) {
     page = "account";
     showToast("온라인 게임은 로그인 후 이용할 수 있습니다.");
@@ -181,6 +219,47 @@ function setConnectionBadge(ok, text) {
   badge.classList.toggle("connection-error", !ok);
 }
 
+
+function stopAccountGuard() {
+  if (state.accountGuardPoller) {
+    clearInterval(state.accountGuardPoller);
+    state.accountGuardPoller = null;
+  }
+}
+
+async function checkOwnAccountStillExists() {
+  if (!isLoggedIn()) return;
+
+  const { data, error } = await db
+    .from("profiles")
+    .select("id")
+    .eq("id", currentUserId())
+    .maybeSingle();
+
+  if (error) {
+    console.error("account guard:", error);
+    return;
+  }
+
+  if (!data) {
+    stopAccountGuard();
+    showToast("관리자에 의해 계정이 삭제되었습니다.");
+    await db.auth.signOut();
+  }
+}
+
+function startAccountGuard() {
+  stopAccountGuard();
+
+  if (!isLoggedIn()) return;
+
+  state.accountGuardPoller = setInterval(
+    checkOwnAccountStillExists,
+    10000
+  );
+}
+
+
 async function init() {
   if (!requireConfigured()) {
     setConnectionBadge(false, "SETUP REQUIRED");
@@ -190,12 +269,20 @@ async function init() {
   const { data: { session } } = await db.auth.getSession();
   state.session = session;
 
-  if (session) await loadProfile();
+  if (session) {
+    await loadProfile();
+    startAccountGuard();
+  }
 
   db.auth.onAuthStateChange(async (_event, session) => {
     state.session = session;
-    if (session) await loadProfile();
-    else state.profile = null;
+    if (session) {
+      await loadProfile();
+      startAccountGuard();
+    } else {
+      state.profile = null;
+      stopAccountGuard();
+    }
 
     renderHeader();
     renderAccount();
@@ -569,6 +656,7 @@ async function login(event) {
 }
 
 async function logout() {
+  stopAccountGuard();
   cleanupRoomChannel();
   state.activeRoom = null;
   state.roomPlayers = [];
@@ -1666,6 +1754,180 @@ async function handleGameRefresh() {
   renderGame();
 }
 
+
+function initEmojiPicker() {
+  const picker = el("emojiPicker");
+  picker.innerHTML = CHAT_EMOJIS
+    .map(emoji => `<button type="button" class="emoji-option" data-emoji="${emoji}">${emoji}</button>`)
+    .join("");
+}
+
+function toggleEmojiPicker() {
+  el("emojiPicker").classList.toggle("hidden");
+}
+
+function insertEmoji(emoji) {
+  const input = el("chatInput");
+  const start = input.selectionStart ?? input.value.length;
+  const end = input.selectionEnd ?? input.value.length;
+
+  input.value =
+    input.value.slice(0, start) +
+    emoji +
+    input.value.slice(end);
+
+  const cursor = start + emoji.length;
+  input.focus();
+  input.setSelectionRange(cursor, cursor);
+}
+
+function isEmojiOnlyMessage(text) {
+  const compact = String(text || "").replace(/\s/g, "");
+  if (!compact) return false;
+
+  try {
+    return /^[\p{Extended_Pictographic}\uFE0F\u200D]+$/u.test(compact);
+  } catch {
+    return false;
+  }
+}
+
+function initBgmControls() {
+  const select = el("bgmTrackSelect");
+  const savedTrack = Number(localStorage.getItem("playground_bgm_track") || 0);
+
+  state.bgmTrackIndex =
+    Number.isInteger(savedTrack) &&
+    savedTrack >= 0 &&
+    savedTrack < BGM_TRACKS.length
+      ? savedTrack
+      : 0;
+
+  select.innerHTML = BGM_TRACKS
+    .map((track, index) => {
+      const number = String(index + 1).padStart(2, "0");
+      return `<option value="${index}">${number}. ${escapeHTML(track.title)} — ${escapeHTML(track.artist)}</option>`;
+    })
+    .join("");
+
+  select.value = String(state.bgmTrackIndex);
+
+  const audio = el("bgmAudio");
+  audio.src = BGM_AUDIO_SRC;
+
+  audio.addEventListener("timeupdate", () => {
+    if (!state.bgmEnabled) return;
+
+    const current = BGM_TRACKS[state.bgmTrackIndex];
+    const next = BGM_TRACKS[state.bgmTrackIndex + 1];
+
+    if (next && audio.currentTime >= next.start - 0.08) {
+      audio.currentTime = current.start;
+    }
+  });
+
+  audio.addEventListener("ended", () => {
+    if (!state.bgmEnabled) return;
+
+    const current = BGM_TRACKS[state.bgmTrackIndex];
+    audio.currentTime = current.start;
+    audio.play().catch(() => {});
+  });
+
+  updateBgmButton();
+}
+
+function updateBgmButton() {
+  const button = el("bgmToggleBtn");
+  button.textContent = state.bgmEnabled ? "♫ BGM ON" : "♫ BGM OFF";
+  button.classList.toggle("active", state.bgmEnabled);
+}
+
+function waitForAudioMetadata(audio) {
+  if (audio.readyState >= 1) return Promise.resolve();
+
+  return new Promise((resolve, reject) => {
+    const onLoaded = () => {
+      cleanup();
+      resolve();
+    };
+
+    const onError = () => {
+      cleanup();
+      reject(new Error("bgm file unavailable"));
+    };
+
+    const cleanup = () => {
+      audio.removeEventListener("loadedmetadata", onLoaded);
+      audio.removeEventListener("error", onError);
+    };
+
+    audio.addEventListener("loadedmetadata", onLoaded, { once: true });
+    audio.addEventListener("error", onError, { once: true });
+    audio.load();
+  });
+}
+
+async function playSelectedBgm(restart = false) {
+  const audio = el("bgmAudio");
+  const track = BGM_TRACKS[state.bgmTrackIndex];
+  const next = BGM_TRACKS[state.bgmTrackIndex + 1];
+
+  try {
+    await waitForAudioMetadata(audio);
+
+    const outsideSelectedTrack =
+      audio.currentTime < track.start ||
+      (next && audio.currentTime >= next.start);
+
+    if (restart || outsideSelectedTrack) {
+      audio.currentTime = track.start;
+    }
+
+    await audio.play();
+    state.bgmEnabled = true;
+    updateBgmButton();
+  } catch (error) {
+    console.error("BGM:", error);
+    state.bgmEnabled = false;
+    updateBgmButton();
+    showToast("BGM 음원 파일 audio/bgm.mp3가 필요합니다.");
+  }
+}
+
+function pauseBgm() {
+  const audio = el("bgmAudio");
+  if (audio) audio.pause();
+
+  state.bgmEnabled = false;
+  updateBgmButton();
+}
+
+async function toggleBgm() {
+  if (state.bgmEnabled) {
+    pauseBgm();
+    return;
+  }
+
+  await playSelectedBgm(false);
+}
+
+async function changeBgmTrack() {
+  const index = Number(el("bgmTrackSelect").value);
+
+  if (!Number.isInteger(index) || index < 0 || index >= BGM_TRACKS.length) {
+    return;
+  }
+
+  state.bgmTrackIndex = index;
+  localStorage.setItem("playground_bgm_track", String(index));
+
+  if (state.bgmEnabled) {
+    await playSelectedBgm(true);
+  }
+}
+
+
 async function loadMessages() {
   if (!state.activeRoom) return;
 
@@ -1693,7 +1955,7 @@ function renderChat() {
   } else {
     state.messages.forEach(message => {
       const item = document.createElement("div");
-      item.className = "chat-message";
+      item.className = `chat-message ${isEmojiOnlyMessage(message.body) ? "emoji-only" : ""}`;
       item.innerHTML = `
         <strong>${escapeHTML(message.sender_name)}</strong>
         <p>${escapeHTML(message.body)}</p>
@@ -1805,27 +2067,9 @@ function renderAdminDashboard() {
     `)
     .join("");
 
-  el("adminUsers").innerHTML = adminTable(
-    ["아이디", "권한", "승", "패", "무"],
-    (data.users || []).map(user => [
-      user.username,
-      user.role,
-      user.wins,
-      user.losses,
-      user.draws
-    ])
-  );
+  el("adminUsers").innerHTML = adminUsersTable(data.users || []);
 
-  el("adminRooms").innerHTML = adminTable(
-    ["방", "HOST", "공개", "상태", "인원"],
-    (data.rooms || []).map(room => [
-      room.name,
-      room.host_username,
-      room.is_public ? "공개" : "비공개",
-      room.status,
-      `${room.player_count}/${room.max_players}`
-    ])
-  );
+  el("adminRooms").innerHTML = adminRoomsTable(data.rooms || []);
 
   el("adminMatches").innerHTML = adminTable(
     ["사용자", "결과", "점수", "인원", "시간"],
@@ -1848,6 +2092,150 @@ function renderAdminDashboard() {
     ])
   );
 }
+
+
+function adminUsersTable(users) {
+  if (!users.length) {
+    return `<div class="empty-state"><span>표시할 사용자가 없습니다.</span></div>`;
+  }
+
+  return `
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>아이디</th>
+          <th>권한</th>
+          <th>승</th>
+          <th>패</th>
+          <th>무</th>
+          <th>관리</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${users.map(user => {
+          const protectedAccount =
+            user.role === "admin" ||
+            user.id === currentUserId();
+
+          return `
+            <tr>
+              <td>${escapeHTML(user.username)}</td>
+              <td>${escapeHTML(user.role)}</td>
+              <td>${escapeHTML(user.wins)}</td>
+              <td>${escapeHTML(user.losses)}</td>
+              <td>${escapeHTML(user.draws)}</td>
+              <td>
+                ${
+                  protectedAccount
+                    ? `<span class="admin-protected-label">보호 계정</span>`
+                    : `<button
+                         type="button"
+                         class="admin-action-btn danger"
+                         data-admin-delete-user="${escapeHTML(user.id)}"
+                         data-username="${escapeHTML(user.username)}"
+                       >계정 삭제</button>`
+                }
+              </td>
+            </tr>
+          `;
+        }).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function adminRoomsTable(rooms) {
+  if (!rooms.length) {
+    return `<div class="empty-state"><span>표시할 게임방이 없습니다.</span></div>`;
+  }
+
+  return `
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>방</th>
+          <th>HOST</th>
+          <th>공개</th>
+          <th>상태</th>
+          <th>인원</th>
+          <th>관리</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rooms.map(room => `
+          <tr>
+            <td>${escapeHTML(room.name)}</td>
+            <td>${escapeHTML(room.host_username)}</td>
+            <td>${room.is_public ? "공개" : "비공개"}</td>
+            <td>${escapeHTML(room.status)}</td>
+            <td>${escapeHTML(`${room.player_count}/${room.max_players}`)}</td>
+            <td>
+              ${
+                room.status === "playing"
+                  ? `<button
+                       type="button"
+                       class="admin-action-btn danger"
+                       data-admin-end-room="${escapeHTML(room.id)}"
+                       data-room-name="${escapeHTML(room.name)}"
+                     >게임 종료</button>`
+                  : `<span class="admin-protected-label">—</span>`
+              }
+            </td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+async function adminForceEndRoom(roomId, roomName) {
+  if (!isAdmin()) return;
+
+  const ok = window.confirm(
+    `"${roomName}" 게임을 지금 강제로 종료하시겠습니까?\n현재 점수로 승패가 기록됩니다.`
+  );
+
+  if (!ok) return;
+
+  try {
+    const { error } = await db.rpc("admin_end_yacht_game", {
+      p_room_id: roomId
+    });
+
+    if (error) throw error;
+
+    showToast("게임을 종료했습니다.");
+    await renderAdmin();
+  } catch (error) {
+    console.error("admin force end:", error);
+    showToast(error.message || "게임을 종료하지 못했습니다.");
+  }
+}
+
+async function adminDeleteUser(userId, username) {
+  if (!isAdmin()) return;
+
+  const ok = window.confirm(
+    `${username} 계정을 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`
+  );
+
+  if (!ok) return;
+
+  try {
+    const { error } = await db.rpc("admin_delete_user", {
+      p_user_id: userId
+    });
+
+    if (error) throw error;
+
+    showToast(`${username} 계정을 삭제했습니다.`);
+    await renderAdmin();
+  } catch (error) {
+    console.error("admin delete user:", error);
+    showToast(error.message || "계정을 삭제하지 못했습니다.");
+  }
+}
+
 
 function adminTable(headers, rows) {
   if (!rows.length) {
@@ -1879,6 +2267,7 @@ async function copyRoomCode() {
 }
 
 function leaveGameScreen() {
+  pauseBgm();
   el("gameOverModal").classList.add("hidden");
   navigate("home");
 }
@@ -1928,6 +2317,26 @@ el("publicRoomsList").addEventListener("click", event => {
 el("refreshPublicRoomsBtn").addEventListener("click", refreshPublicRooms);
 el("refreshAdminBtn").addEventListener("click", renderAdmin);
 
+el("adminUsers").addEventListener("click", event => {
+  const button = event.target.closest("[data-admin-delete-user]");
+  if (!button) return;
+
+  adminDeleteUser(
+    button.dataset.adminDeleteUser,
+    button.dataset.username || "사용자"
+  );
+});
+
+el("adminRooms").addEventListener("click", event => {
+  const button = event.target.closest("[data-admin-end-room]");
+  if (!button) return;
+
+  adminForceEndRoom(
+    button.dataset.adminEndRoom,
+    button.dataset.roomName || "게임방"
+  );
+});
+
 el("createRoomBtn").addEventListener("click", createRoom);
 el("joinRoomForm").addEventListener("submit", joinRoom);
 el("copyRoomCodeBtn").addEventListener("click", copyRoomCode);
@@ -1936,13 +2345,38 @@ el("resumeRoomBtn").addEventListener("click", () => navigate("game"));
 el("leaveRoomBtn").addEventListener("click", leaveWaitingRoom);
 
 el("rollBtn").addEventListener("click", rollDice);
+
+el("emojiToggleBtn").addEventListener("click", toggleEmojiPicker);
+el("emojiPicker").addEventListener("click", event => {
+  const button = event.target.closest("[data-emoji]");
+  if (!button) return;
+
+  insertEmoji(button.dataset.emoji);
+  el("emojiPicker").classList.add("hidden");
+});
+
+document.addEventListener("click", event => {
+  if (
+    !event.target.closest("#emojiPicker") &&
+    !event.target.closest("#emojiToggleBtn")
+  ) {
+    el("emojiPicker").classList.add("hidden");
+  }
+});
+
+el("bgmToggleBtn").addEventListener("click", toggleBgm);
+el("bgmTrackSelect").addEventListener("change", changeBgmTrack);
+
 el("chatForm").addEventListener("submit", sendChat);
 el("leaveGameBtn").addEventListener("click", leaveGameScreen);
 el("finishGameBtn").addEventListener("click", leaveGameScreen);
 
 window.addEventListener("beforeunload", () => {
+  stopAccountGuard();
   stopPublicRoomPolling();
   if (state.presenceChannel) state.presenceChannel.untrack();
 });
 
+initEmojiPicker();
+initBgmControls();
 init();
