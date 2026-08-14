@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="친구들과 함께 즐기는 미니게임 Playground" />
+  <meta name="description" content="친구들과 함께 즐기는 온라인 미니게임 Playground" />
   <title>Playground</title>
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -26,16 +26,14 @@
   </header>
 
   <main>
-    <!-- HOME -->
     <section id="page-home" class="page active">
       <div class="home-shell">
         <section class="hero-panel">
           <div>
-            <p class="eyebrow">MINI GAME HUB</p>
+            <p class="eyebrow">ONLINE MINI GAME HUB</p>
             <h1>친구들과<br />가볍게 한 판.</h1>
             <p class="hero-copy">
-              게임을 선택하고 바로 시작하세요. 계정으로 로그인하면
-              플레이 기록과 승률도 저장됩니다.
+              계정을 만들고 게임방에 들어가 친구들과 실시간으로 플레이하세요.
             </p>
           </div>
 
@@ -43,12 +41,12 @@
             <article class="stat-card">
               <span>현재 플레이 중</span>
               <strong id="homePlayingCount">0</strong>
-              <small>이 브라우저의 활성 게임 기준</small>
+              <small>실시간 접속 기준</small>
             </article>
             <article class="stat-card">
               <span>등록된 계정</span>
-              <strong id="homeAccountCount">0</strong>
-              <small>이 브라우저에 저장됨</small>
+              <strong id="homeAccountCount">-</strong>
+              <small>Playground 전체</small>
             </article>
           </div>
         </section>
@@ -59,7 +57,7 @@
               <p class="eyebrow">GAMES</p>
               <h2>게임 선택</h2>
             </div>
-            <span class="demo-badge">LOCAL DEMO</span>
+            <span id="connectionBadge" class="demo-badge">CONNECTING</span>
           </div>
 
           <div class="game-grid">
@@ -73,8 +71,8 @@
                   <span id="yachtPlayerCount">0명 플레이 중</span>
                 </div>
                 <h3>Yacht Dice</h3>
-                <p>주사위를 굴리고 조합을 만들어 가장 높은 점수를 노리는 턴제 게임입니다.</p>
-                <button id="openYachtBtn" class="primary-btn">게임 시작</button>
+                <p>2–4명이 각자의 기기에서 접속해 즐기는 온라인 턴제 주사위 게임입니다.</p>
+                <button id="openYachtBtn" class="primary-btn">게임방으로</button>
               </div>
             </article>
 
@@ -102,13 +100,12 @@
       </div>
     </section>
 
-    <!-- ACCOUNT -->
     <section id="page-account" class="page">
       <div class="narrow-shell">
         <div class="page-title">
           <p class="eyebrow">ACCOUNT</p>
           <h1>내 계정</h1>
-          <p>계정을 만들면 이 브라우저에서 승패와 승률을 기록합니다.</p>
+          <p>아이디와 비밀번호로 로그인하고 승패 기록을 확인합니다.</p>
         </div>
 
         <div id="authView" class="account-grid">
@@ -125,7 +122,7 @@
               </label>
               <label>
                 비밀번호
-                <input id="loginPassword" type="password" autocomplete="current-password" required minlength="4" maxlength="64" />
+                <input id="loginPassword" type="password" autocomplete="current-password" required minlength="8" maxlength="72" />
               </label>
               <button class="primary-btn" type="submit">로그인</button>
             </form>
@@ -137,11 +134,11 @@
               </label>
               <label>
                 비밀번호
-                <input id="signupPassword" type="password" autocomplete="new-password" required minlength="4" maxlength="64" />
+                <input id="signupPassword" type="password" autocomplete="new-password" required minlength="8" maxlength="72" />
               </label>
               <label>
                 비밀번호 확인
-                <input id="signupPasswordConfirm" type="password" autocomplete="new-password" required minlength="4" maxlength="64" />
+                <input id="signupPasswordConfirm" type="password" autocomplete="new-password" required minlength="8" maxlength="72" />
               </label>
               <button class="primary-btn" type="submit">계정 만들기</button>
             </form>
@@ -150,14 +147,14 @@
           </section>
 
           <aside class="card account-note">
-            <h3>현재 데모의 계정 저장 방식</h3>
+            <h3>온라인 계정</h3>
             <p>
-              계정 정보와 경기 기록은 현재 사용하는 브라우저의
-              <code>localStorage</code>에만 저장됩니다.
+              비밀번호는 웹페이지에 저장하지 않고 Supabase Auth가 처리합니다.
+              경기 기록은 서버 DB에 저장되어 다른 기기에서 로그인해도 유지됩니다.
             </p>
             <p>
-              비밀번호 원문은 저장하지 않고 SHA-256 해시를 저장하지만,
-              서버 인증이 아니므로 실제 서비스 계정으로 사용하기에는 적합하지 않습니다.
+              현재 버전은 아이디/비밀번호 방식에 맞추기 위해 내부 인증용 이메일을 자동 생성합니다.
+              비밀번호 분실 복구 기능은 아직 제공하지 않습니다.
             </p>
           </aside>
         </div>
@@ -168,7 +165,7 @@
             <div>
               <p class="eyebrow">PLAYER PROFILE</p>
               <h2 id="profileName">Player</h2>
-              <p>Playground 로컬 프로필</p>
+              <p>Playground 온라인 프로필</p>
             </div>
             <button id="logoutBtn" class="secondary-btn">로그아웃</button>
           </div>
@@ -209,47 +206,74 @@
       </div>
     </section>
 
-    <!-- YACHT LOBBY -->
     <section id="page-lobby" class="page">
       <div class="narrow-shell">
         <button class="text-btn back-home-btn" data-nav="home">← 홈으로</button>
 
         <div class="page-title">
           <p class="eyebrow">YACHT DICE</p>
-          <h1>게임 준비</h1>
-          <p>2–4명의 플레이어 이름을 정한 뒤 게임을 시작합니다.</p>
+          <h1>온라인 게임방</h1>
+          <p>방을 만들거나 친구가 알려준 6자리 방 코드로 입장하세요.</p>
         </div>
 
-        <section class="card lobby-card">
-          <div class="lobby-top">
-            <div>
-              <span class="label">플레이어 수</span>
-              <div class="player-count-picker" role="group" aria-label="플레이어 수">
-                <button class="count-btn active" data-count="2">2</button>
-                <button class="count-btn" data-count="3">3</button>
-                <button class="count-btn" data-count="4">4</button>
+        <div id="lobbyActions" class="lobby-action-grid">
+          <section class="card lobby-card">
+            <p class="eyebrow">CREATE ROOM</p>
+            <h2>방 만들기</h2>
+            <label class="field-label">
+              최대 인원
+              <div class="player-count-picker" role="group" aria-label="최대 플레이어 수">
+                <button class="count-btn" data-count="2" type="button">2</button>
+                <button class="count-btn" data-count="3" type="button">3</button>
+                <button class="count-btn active" data-count="4" type="button">4</button>
               </div>
+            </label>
+            <button id="createRoomBtn" class="primary-btn large">새 방 만들기</button>
+          </section>
+
+          <section class="card lobby-card">
+            <p class="eyebrow">JOIN ROOM</p>
+            <h2>방 코드로 입장</h2>
+            <form id="joinRoomForm" class="join-room-form">
+              <label class="field-label">
+                방 코드
+                <input id="roomCodeInput" maxlength="6" placeholder="예: A1B2C3" autocomplete="off" />
+              </label>
+              <button class="primary-btn large" type="submit">입장</button>
+            </form>
+          </section>
+        </div>
+
+        <section id="activeRoomPanel" class="card active-room-panel hidden">
+          <div class="room-heading">
+            <div>
+              <p class="eyebrow">YOUR ROOM</p>
+              <h2>방 <span id="roomCodeText">------</span></h2>
             </div>
-            <div class="mode-note">
-              <span class="demo-badge">LOCAL MULTIPLAYER</span>
-              <p>현재는 같은 화면에서 차례대로 플레이합니다.</p>
-            </div>
+            <button id="copyRoomCodeBtn" class="secondary-btn">코드 복사</button>
           </div>
 
-          <div id="playerNameInputs" class="player-name-inputs"></div>
-          <button id="startYachtBtn" class="primary-btn large">Yacht Dice 시작</button>
+          <div class="room-info-row">
+            <span id="roomStatusBadge" class="demo-badge">WAITING</span>
+            <span id="roomCapacityText">0 / 4명</span>
+          </div>
+
+          <div id="roomPlayerList" class="room-player-list"></div>
+
+          <div class="room-actions">
+            <button id="startRoomBtn" class="primary-btn large hidden">게임 시작</button>
+            <button id="resumeRoomBtn" class="primary-btn large hidden">게임으로 돌아가기</button>
+            <button id="leaveRoomBtn" class="secondary-btn large">방 나가기</button>
+          </div>
         </section>
       </div>
     </section>
 
-    <!-- YACHT GAME -->
     <section id="page-game" class="page">
       <div class="game-shell">
         <div class="game-topbar">
-          <button id="leaveGameBtn" class="text-btn">← 게임 나가기</button>
-          <div>
-            <span class="demo-badge">YACHT DICE</span>
-          </div>
+          <button id="leaveGameBtn" class="text-btn">← 홈으로</button>
+          <div class="game-room-code">방 코드 <strong id="gameRoomCode">------</strong></div>
         </div>
 
         <section id="playerStrip" class="player-strip"></section>
@@ -275,14 +299,14 @@
 
             <div class="controls">
               <button id="rollBtn" class="primary-btn large">주사위 굴리기</button>
-              <p id="statusText" class="status">첫 번째 굴리기를 시작하세요.</p>
+              <p id="statusText" class="status">게임 상태를 불러오는 중입니다.</p>
             </div>
 
             <div class="help">
               <strong>조작법</strong>
               <p>
-                굴린 뒤 주사위를 클릭하면 고정됩니다.
-                점수표에서 한 항목을 선택하면 다음 플레이어의 차례가 됩니다.
+                자신의 차례에만 주사위를 굴릴 수 있습니다. 주사위를 누르면 고정되며,
+                점수표의 한 항목을 선택하면 다음 플레이어로 차례가 넘어갑니다.
               </p>
             </div>
           </section>
@@ -313,7 +337,7 @@
             <div id="chatMessages" class="chat-messages" aria-live="polite"></div>
 
             <form id="chatForm" class="chat-form">
-              <input id="chatInput" maxlength="120" placeholder="메시지를 입력하세요" autocomplete="off" />
+              <input id="chatInput" maxlength="200" placeholder="메시지를 입력하세요" autocomplete="off" />
               <button class="primary-btn" type="submit">전송</button>
             </form>
           </aside>
@@ -327,13 +351,23 @@
       <p class="eyebrow">GAME OVER</p>
       <h2>게임 종료</h2>
       <div id="rankingList" class="ranking-list"></div>
-      <button id="playAgainBtn" class="primary-btn large">같은 멤버로 다시 하기</button>
-      <button id="finishGameBtn" class="secondary-btn large">홈으로</button>
+      <button id="finishGameBtn" class="primary-btn large">홈으로</button>
+    </div>
+  </div>
+
+  <div id="setupModal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-card setup-card">
+      <p class="eyebrow">SETUP REQUIRED</p>
+      <h2>Supabase 설정이 필요합니다</h2>
+      <p>
+        <code>main.js</code> 상단의 URL과 Publishable key를 입력한 뒤 다시 배포하세요.
+      </p>
     </div>
   </div>
 
   <div id="toast" class="toast hidden" aria-live="polite"></div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="main.js"></script>
 </body>
 </html>

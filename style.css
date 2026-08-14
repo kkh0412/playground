@@ -1156,3 +1156,145 @@ input:focus {
     padding: 16px;
   }
 }
+
+
+/* --- Online v3 additions --- */
+.field-label {
+  display: grid;
+  gap: 10px;
+  color: #475467;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.lobby-action-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+
+.lobby-card h2 {
+  margin-bottom: 22px;
+}
+
+.lobby-card .player-count-picker {
+  margin-bottom: 22px;
+}
+
+.join-room-form {
+  display: grid;
+  gap: 18px;
+}
+
+#roomCodeInput {
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  font-size: 20px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.active-room-panel {
+  margin-top: 18px;
+  padding: 28px;
+}
+
+.room-heading,
+.room-info-row,
+.room-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.room-info-row {
+  justify-content: flex-start;
+  margin: 16px 0;
+  color: #667085;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.room-player-list {
+  display: grid;
+  gap: 8px;
+  margin: 18px 0 22px;
+}
+
+.room-player-row {
+  display: grid;
+  grid-template-columns: 36px 1fr auto;
+  align-items: center;
+  gap: 11px;
+  padding: 12px 14px;
+  border-radius: 13px;
+  background: #f7f8fa;
+}
+
+.room-player-seat {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  background: #ede9fe;
+  color: #6941c6;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.room-player-row.me {
+  background: #f2efff;
+}
+
+.room-player-row small {
+  color: #98a2b3;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.game-room-code {
+  color: #667085;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.game-room-code strong {
+  margin-left: 6px;
+  color: #101828;
+  letter-spacing: .08em;
+}
+
+.setup-card p {
+  color: #667085;
+  line-height: 1.7;
+}
+
+.setup-card code {
+  color: #6941c6;
+}
+
+.connection-ok {
+  border-color: #abefc6 !important;
+  background: #ecfdf3 !important;
+  color: #067647 !important;
+}
+
+.connection-error {
+  border-color: #fecdca !important;
+  background: #fef3f2 !important;
+  color: #b42318 !important;
+}
+
+@media (max-width: 780px) {
+  .lobby-action-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .room-heading,
+  .room-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
