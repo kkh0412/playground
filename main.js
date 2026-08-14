@@ -420,8 +420,6 @@ function categoryRule(category) {
 
 
 const BGM_LOCAL_SRC = "audio/bgm.mp3";
-const BGM_GITHUB_CONTENTS_API =
-  "https://api.github.com/repos/kkh0412/playground/contents/audio?ref=main";
 const BGM_RAW_FALLBACK =
   "https://raw.githubusercontent.com/kkh0412/playground/main/audio/bgm.mp3";
 
@@ -3472,70 +3470,77 @@ function syncBgmControls() {
   });
 }
 
-async function sourceExists(url) {
-  try {
-    const response = await fetch(url, {
-      method: "HEAD",
-      cache: "no-store"
-    });
+function audioErrorDescription(mediaError) {
+  if (!mediaError) return "unknown media error";
 
-    return response.ok;
-  } catch {
-    return false;
+  switch (mediaError.code) {
+    case MediaError.MEDIA_ERR_ABORTED:
+      return "loading aborted";
+    case MediaError.MEDIA_ERR_NETWORK:
+      return "network error";
+    case MediaError.MEDIA_ERR_DECODE:
+      return "audio decode error";
+    case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
+      return "audio source not supported or unavailable";
+    default:
+      return `media error ${mediaError.code}`;
   }
 }
 
-async function discoverGithubMp3() {
-  const response = await fetch(BGM_GITHUB_CONTENTS_API, {
-    headers: {
-      "Accept": "application/vnd.github+json"
-    },
-    cache: "no-store"
+function probeAudioSource(url, timeoutMs = 15000) {
+  return new Promise((resolve, reject) => {
+    const probe = new Audio();
+    let settled = false;
+
+    const cleanup = () => {
+      probe.removeEventListener("loadedmetadata", onReady);
+      probe.removeEventListener("canplay", onReady);
+      probe.removeEventListener("error", onError);
+      clearTimeout(timer);
+    };
+
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+
+      // Stop the probe from continuing to download the full combined MP3.
+      probe.pause();
+      probe.removeAttribute("src");
+      probe.load();
+
+      callback(value);
+    };
+
+    const onReady = () => {
+      finish(resolve, url);
+    };
+
+    const onError = () => {
+      const reason = audioErrorDescription(probe.error);
+      finish(
+        reject,
+        new Error(`${reason}: ${url}`)
+      );
+    };
+
+    const timer = setTimeout(() => {
+      finish(
+        reject,
+        new Error(`audio metadata timeout: ${url}`)
+      );
+    }, timeoutMs);
+
+    probe.preload = "metadata";
+    probe.addEventListener("loadedmetadata", onReady, { once: true });
+    probe.addEventListener("canplay", onReady, { once: true });
+    probe.addEventListener("error", onError, { once: true });
+
+    // Do not use fetch/HEAD here. The HTMLMediaElement decoder is the
+    // authoritative test for whether this URL is actually playable.
+    probe.src = url;
+    probe.load();
   });
-
-  if (!response.ok) {
-    throw new Error(
-      `GitHub audio directory lookup failed (${response.status})`
-    );
-  }
-
-  const items = await response.json();
-
-  if (!Array.isArray(items)) {
-    throw new Error("GitHub audio directory response is invalid");
-  }
-
-  const mp3Files = items.filter(item =>
-    item?.type === "file" &&
-    typeof item.name === "string" &&
-    item.name.toLowerCase().endsWith(".mp3")
-  );
-
-  if (!mp3Files.length) {
-    throw new Error("No MP3 file exists in the GitHub audio directory");
-  }
-
-  const preferred =
-    mp3Files.find(item => item.name.toLowerCase() === "bgm.mp3") ||
-    mp3Files[0];
-
-  // A real long MP3 should not be only a few bytes/kilobytes.
-  // This catches the usual Git LFS pointer case.
-  if (Number(preferred.size || 0) > 0 && Number(preferred.size) < 2048) {
-    throw new Error(
-      "The MP3 in GitHub appears to be a Git LFS pointer, not the audio file"
-    );
-  }
-
-  if (!preferred.download_url) {
-    throw new Error("GitHub did not return a downloadable MP3 URL");
-  }
-
-  return {
-    url: preferred.download_url,
-    name: preferred.name,
-    size: Number(preferred.size || 0)
-  };
 }
 
 async function resolveBgmSource() {
@@ -3550,38 +3555,50 @@ async function resolveBgmSource() {
   state.bgmResolvePromise = (async () => {
     const localUrl = new URL(BGM_LOCAL_SRC, document.baseURI).href;
 
-    // 1. GitHub Pages deployment with the expected file name.
-    if (await sourceExists(localUrl)) {
-      state.bgmResolvedSrc = localUrl;
-      return localUrl;
-    }
+    const candidates = [
+      {
+        label: "GitHub Pages",
+        url: localUrl
+      },
+      {
+        label: "GitHub raw",
+        url: BGM_RAW_FALLBACK
+      }
+    ];
 
-    // 2. Public GitHub repository: discover the actual MP3 file name.
-    try {
-      const discovered = await discoverGithubMp3();
+    const failures = [];
 
-      console.info(
-        `BGM discovered in GitHub: ${discovered.name}`,
-        discovered.url
-      );
+    for (const candidate of candidates) {
+      try {
+        console.info(
+          `[BGM] trying ${candidate.label}:`,
+          candidate.url
+        );
 
-      state.bgmResolvedSrc = discovered.url;
-      return discovered.url;
-    } catch (error) {
-      console.error("GitHub BGM discovery:", error);
+        const resolved = await probeAudioSource(candidate.url);
 
-      if (String(error?.message || "").includes("Git LFS pointer")) {
-        throw error;
+        console.info(
+          `[BGM] playable source found via ${candidate.label}:`,
+          resolved
+        );
+
+        state.bgmResolvedSrc = resolved;
+        return resolved;
+      } catch (error) {
+        failures.push(
+          `${candidate.label}: ${error.message}`
+        );
+
+        console.warn(
+          `[BGM] ${candidate.label} failed:`,
+          error
+        );
       }
     }
 
-    // 3. Correctly named raw file, useful while Pages deployment lags.
-    if (await sourceExists(BGM_RAW_FALLBACK)) {
-      state.bgmResolvedSrc = BGM_RAW_FALLBACK;
-      return BGM_RAW_FALLBACK;
-    }
-
-    throw new Error("BGM_MP3_NOT_FOUND");
+    throw new Error(
+      `BGM source failed | ${failures.join(" | ")}`
+    );
   })();
 
   try {
@@ -3658,6 +3675,7 @@ function initBgmControls() {
   allBgmTrackSelects().forEach(populateBgmTrackSelect);
 
   const audio = el("bgmAudio");
+  audio.removeAttribute("src");
   audio.preload = "metadata";
 
   audio.addEventListener("ended", () => {
@@ -3756,23 +3774,19 @@ async function playSelectedBgm(restart = false) {
     stopBgmSegmentMonitor();
     syncBgmControls();
 
-    if (
-      String(error?.message || "").includes("Git LFS pointer")
-    ) {
-      showToast(
-        tr(
-          "GitHub의 MP3가 실제 음원이 아니라 Git LFS 포인터입니다. 실제 MP3 파일로 올려야 합니다.",
-          "The GitHub MP3 is a Git LFS pointer, not the actual audio file."
-        )
-      );
-    } else {
-      showToast(
-        tr(
-          "audio 폴더에서 재생 가능한 MP3를 찾지 못했습니다. 파일 또는 GitHub Pages 배포 상태를 확인하세요.",
-          "No playable MP3 was found in the audio folder. Check the file and GitHub Pages deployment."
-        )
-      );
-    }
+    const details = String(error?.message || "");
+
+    console.error(
+      "[BGM] all playback sources failed:",
+      details
+    );
+
+    showToast(
+      tr(
+        "BGM을 열지 못했습니다. 개발자 도구 Console의 [BGM] 로그에서 실제 실패 URL과 원인을 확인할 수 있습니다.",
+        "Could not open the BGM. Check the [BGM] entries in the developer console for the failed URL and reason."
+      )
+    );
   }
 }
 
