@@ -2791,3 +2791,91 @@ body.spectator-mode #rollBtn {
   background: #ecfdf3;
   color: #067647;
 }
+
+
+/* ============================================================
+   Demo v10 — reliable waiting/pending dice animation
+   ============================================================ */
+
+#diceArea .dice3d-button.waiting .dice3d-static-face,
+#diceArea .dice3d-button.pending .dice3d-static-face {
+  visibility: hidden !important;
+  opacity: 0 !important;
+}
+
+#diceArea .dice3d-button.waiting .dice3d-cube,
+#diceArea .dice3d-button.pending .dice3d-cube {
+  visibility: visible !important;
+  opacity: 1 !important;
+  animation:
+    dice-continuous-spin
+    var(--dice-spin-duration, 980ms)
+    linear
+    var(--dice-spin-delay, 0ms)
+    infinite !important;
+}
+
+#diceArea .dice3d-button.waiting:not(.held),
+#diceArea .dice3d-button.pending:not(.held) {
+  overflow: visible !important;
+  animation:
+    dice-continuous-bob
+    620ms
+    ease-in-out
+    var(--dice-bob-delay, 0ms)
+    infinite
+    alternate;
+}
+
+#diceArea .dice3d-button.held .dice3d-static-face {
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+#diceArea .dice3d-button.held .dice3d-cube {
+  visibility: hidden !important;
+  opacity: 0 !important;
+  animation: none !important;
+}
+
+@keyframes dice-continuous-spin {
+  0% {
+    transform:
+      rotateX(0deg)
+      rotateY(0deg)
+      rotateZ(0deg);
+  }
+
+  100% {
+    transform:
+      rotateX(var(--dice-spin-x, 1080deg))
+      rotateY(var(--dice-spin-y, 1260deg))
+      rotateZ(var(--dice-spin-z, 720deg));
+  }
+}
+
+@keyframes dice-continuous-bob {
+  from {
+    transform: translate3d(0, 2px, 0);
+  }
+
+  to {
+    transform: translate3d(0, -5px, 0);
+  }
+}
+
+/* WAAPI result animation takes priority after pending spin is frozen. */
+#diceArea .dice3d-button.rolling .dice3d-cube {
+  animation: none !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+#diceArea .dice3d-button.rolling {
+  animation: none !important;
+}
+
+/* Admin badge is a live status indicator. */
+.admin-auto-status:disabled {
+  min-width: 158px;
+}

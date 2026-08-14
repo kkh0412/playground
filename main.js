@@ -24,9 +24,9 @@ const db = IS_CONFIGURED
     )
   : null;
 
-const SESSION_BACKUP_KEY = "playground_auth_session_backup_v1";
-const PAGE_STORAGE_KEY = "playground_current_page_v1";
-const SPECTATOR_STORAGE_KEY = "playground_spectator_room_v1";
+const REFRESH_TOKEN_BACKUP_KEY = "playground_refresh_token_backup_v2";
+const PAGE_STORAGE_KEY = "playground_current_page_v2";
+const SPECTATOR_STORAGE_KEY = "playground_spectator_room_v2";
 
 const UPPER_CATEGORY_KEYS = [
   "ones", "twos", "threes", "fours", "fives", "sixes"
@@ -104,6 +104,7 @@ const state = {
   bgmEnabled: false,
   bgmTrackIndex: 0,
   accountGuardPoller: null,
+  accountGuardMisses: 0,
   adminPoller: null,
   adminRefreshInFlight: false,
   toastTimer: null,
@@ -200,29 +201,27 @@ async function usernameToInternalEmail(username) {
   return `u_${hash.slice(0, 40)}@playground.example.com`;
 }
 
-function saveSessionBackup(session) {
+function saveRefreshTokenBackup(session) {
   try {
-    if (session?.access_token && session?.refresh_token) {
+    if (session?.refresh_token) {
       localStorage.setItem(
-        SESSION_BACKUP_KEY,
-        JSON.stringify({
-          access_token: session.access_token,
-          refresh_token: session.refresh_token
-        })
+        REFRESH_TOKEN_BACKUP_KEY,
+        session.refresh_token
       );
     }
   } catch (error) {
-    console.error("session backup:", error);
+    console.error("refresh token backup:", error);
   }
 }
 
-function clearSessionBackup() {
+function clearRefreshTokenBackup() {
   try {
-    localStorage.removeItem(SESSION_BACKUP_KEY);
+    localStorage.removeItem(REFRESH_TOKEN_BACKUP_KEY);
   } catch {}
 }
 
 async function getPersistedSession() {
+  // Normal browser path: Supabase restores its own localStorage session.
   const {
     data: { session },
     error
@@ -233,41 +232,48 @@ async function getPersistedSession() {
   }
 
   if (session) {
-    saveSessionBackup(session);
+    saveRefreshTokenBackup(session);
     return session;
   }
 
-  // Fallback for browsers/CDN-client transitions where Supabase's own
-  // storage key was not recovered, while the browser still has our copy.
+  // Fallback: if the SDK's storage hydration missed the session, use only the
+  // latest refresh token. refreshSession returns a newly rotated token pair.
+  let refreshToken = null;
+
   try {
-    const raw = localStorage.getItem(SESSION_BACKUP_KEY);
-    if (!raw) return null;
+    refreshToken = localStorage.getItem(REFRESH_TOKEN_BACKUP_KEY);
+  } catch {}
 
-    const saved = JSON.parse(raw);
+  if (!refreshToken) return null;
 
-    if (!saved?.access_token || !saved?.refresh_token) {
-      clearSessionBackup();
-      return null;
-    }
+  try {
+    const { data, error: refreshError } =
+      await db.auth.refreshSession({
+        refresh_token: refreshToken
+      });
 
-    const { data, error: restoreError } = await db.auth.setSession({
-      access_token: saved.access_token,
-      refresh_token: saved.refresh_token
-    });
+    if (refreshError) {
+      console.error("refresh persisted session:", refreshError);
 
-    if (restoreError) {
-      console.error("restore persisted session:", restoreError);
-      clearSessionBackup();
+      const message = String(refreshError.message || "").toLowerCase();
+      if (
+        message.includes("invalid refresh token") ||
+        message.includes("refresh token not found") ||
+        message.includes("already used")
+      ) {
+        clearRefreshTokenBackup();
+      }
+
       return null;
     }
 
     if (data?.session) {
-      saveSessionBackup(data.session);
+      saveRefreshTokenBackup(data.session);
       return data.session;
     }
   } catch (error) {
-    console.error("session restore:", error);
-    clearSessionBackup();
+    // Network failure is not a reason to erase a valid remembered login.
+    console.error("session refresh fallback:", error);
   }
 
   return null;
@@ -400,32 +406,54 @@ function stopAccountGuard() {
 async function checkOwnAccountStillExists() {
   if (!isLoggedIn()) return;
 
-  const { data, error } = await db
-    .from("profiles")
-    .select("id")
-    .eq("id", currentUserId())
-    .maybeSingle();
+  try {
+    const {
+      data: { user },
+      error
+    } = await db.auth.getUser();
 
-  if (error) {
-    console.error("account guard:", error);
-    return;
-  }
+    if (!error && user) {
+      state.accountGuardMisses = 0;
+      return;
+    }
 
-  if (!data) {
+    // Do not sign out on one transient request/RLS/network failure.
+    const status = Number(error?.status || 0);
+    const message = String(error?.message || "").toLowerCase();
+    const definitelyGone =
+      status === 401 ||
+      status === 403 ||
+      message.includes("user not found") ||
+      message.includes("session from session_id claim in jwt does not exist");
+
+    if (!definitelyGone) {
+      console.error("account guard transient error:", error);
+      return;
+    }
+
+    state.accountGuardMisses += 1;
+
+    // Require two consecutive authoritative failures.
+    if (state.accountGuardMisses < 2) return;
+
     stopAccountGuard();
-    showToast("관리자에 의해 계정이 삭제되었습니다.");
-    await db.auth.signOut();
+    showToast("계정이 더 이상 존재하지 않아 로그아웃됩니다.");
+    clearRefreshTokenBackup();
+    await db.auth.signOut({ scope: "local" });
+  } catch (error) {
+    console.error("account guard:", error);
   }
 }
 
 function startAccountGuard() {
   stopAccountGuard();
+  state.accountGuardMisses = 0;
 
   if (!isLoggedIn()) return;
 
   state.accountGuardPoller = setInterval(
     checkOwnAccountStillExists,
-    10000
+    30000
   );
 }
 
@@ -468,7 +496,7 @@ async function applySignedInSession(session) {
   }
 
   state.session = session;
-  saveSessionBackup(session);
+  saveRefreshTokenBackup(session);
 
   // Do not wait for the auth event callback to update the UI.
   await loadProfile();
@@ -529,8 +557,8 @@ async function restoreInitialPage(requestedPage) {
     return;
   }
 
-  if (page === "admin") {
-    page = isAdmin() ? "admin" : "home";
+  if (page === "admin" && !isAdmin()) {
+    page = "account";
   }
 
   if (page === "game") {
@@ -572,41 +600,51 @@ async function init() {
   }
 
   db.auth.onAuthStateChange((event, session) => {
-    // Keep this callback synchronous. Supabase currently documents a
-    // deadlock risk when async Supabase calls are awaited directly here.
-    state.session = session;
-
+    // Never start Supabase API calls directly from this callback.
     if (session) {
-      saveSessionBackup(session);
-    } else if (event === "SIGNED_OUT") {
-      clearSessionBackup();
-    }
-
-    if (!session) {
-      state.profile = null;
-      stopAccountGuard();
-      cleanupRoomChannel();
-
+      state.session = session;
+      saveRefreshTokenBackup(session);
       renderHeader();
-      renderAccount();
-      setGlobalChatAvailability();
 
+      // TOKEN_REFRESHED may happen frequently; only persist it.
       if (
-        state.page === "lobby" ||
-        state.page === "game" ||
-        state.page === "admin"
+        event === "SIGNED_IN" ||
+        event === "USER_UPDATED"
       ) {
-        navigate("account");
+        window.setTimeout(() => {
+          syncAuthUi(event, session).catch(error => {
+            console.error("auth state sync failed:", error);
+          });
+        }, 0);
       }
-    } else {
-      renderHeader();
+
+      return;
     }
 
-    window.setTimeout(() => {
-      syncAuthUi(event, session).catch(error => {
-        console.error("auth state sync failed:", error);
-      });
-    }, 0);
+    // IMPORTANT: INITIAL_SESSION(null) is not treated as an explicit logout.
+    // A session may already have been restored by getPersistedSession().
+    if (event !== "SIGNED_OUT") {
+      return;
+    }
+
+    state.session = null;
+    state.profile = null;
+    stopAccountGuard();
+    stopAdminAutoRefresh();
+    cleanupRoomChannel();
+    clearRefreshTokenBackup();
+
+    renderHeader();
+    renderAccount();
+    setGlobalChatAvailability();
+
+    if (
+      state.page === "lobby" ||
+      state.page === "game" ||
+      state.page === "admin"
+    ) {
+      navigate("account");
+    }
   });
 
   await initPresence();
@@ -1015,10 +1053,7 @@ async function login(event) {
         "로그인은 되었지만 프로필을 불러오지 못했습니다. 페이지를 새로고침해 주세요.";
       renderHeader();
     } else {
-      state.session = null;
-      state.profile = null;
       message.textContent = "아이디 또는 비밀번호가 올바르지 않습니다.";
-      renderHeader();
     }
   } finally {
     submitButton.disabled = false;
@@ -1043,8 +1078,8 @@ async function logout() {
   state.globalMessages = [];
   state.isSpectator = false;
   rememberSpectatorRoom(null);
-  clearSessionBackup();
-  await db.auth.signOut();
+  clearRefreshTokenBackup();
+  await db.auth.signOut({ scope: "local" });
   navigate("home");
 }
 
@@ -1612,7 +1647,7 @@ async function handleRoomRefresh() {
     cleanupRoomChannel();
     state.activeRoom = null;
     state.roomPlayers = [];
-    if (state.page === "game") navigate("home");
+    if (state.page === "game") navigate("lobby");
     else if (state.page === "lobby") refreshLobby();
     return;
   }
@@ -1920,96 +1955,71 @@ function shouldShowWaitingDice() {
   return Boolean(
     state.gameState &&
     !state.gameState.finished &&
-    !state.gameState.has_rolled &&
-    !state.diceAnimating
+    !state.gameState.has_rolled
   );
 }
 
-function randomRotation() {
-  return {
-    x: Math.floor(Math.random() * 720) - 360,
-    y: Math.floor(Math.random() * 720) - 360,
-    z: Math.floor(Math.random() * 360) - 180
-  };
+function applySpinVariables(button, index) {
+  const duration = 760 + Math.floor(Math.random() * 420);
+  const delay = -Math.floor(Math.random() * duration);
+  const x = 720 + Math.floor(Math.random() * 720);
+  const y = 720 + Math.floor(Math.random() * 720);
+  const z = 360 + Math.floor(Math.random() * 540);
+
+  button.style.setProperty("--dice-spin-duration", `${duration}ms`);
+  button.style.setProperty("--dice-spin-delay", `${delay}ms`);
+  button.style.setProperty("--dice-spin-x", `${x}deg`);
+  button.style.setProperty("--dice-spin-y", `${y}deg`);
+  button.style.setProperty("--dice-spin-z", `${z}deg`);
+  button.style.setProperty("--dice-bob-delay", `${-index * 61}ms`);
 }
 
-function startWaitingDiceTumble(area) {
-  const buttons = [...area.querySelectorAll(".dice3d-button.waiting")];
+function beginPendingRoll(heldBefore) {
+  let buttons = [...el("diceArea").querySelectorAll(".dice3d-button")];
+
+  if (buttons.length !== 5) {
+    renderDice(
+      state.displayDice ||
+        state.gameState?.dice ||
+        [1, 1, 1, 1, 1],
+      heldBefore
+    );
+
+    buttons = [...el("diceArea").querySelectorAll(".dice3d-button")];
+  }
 
   buttons.forEach((button, index) => {
-    const cube = button.querySelector(".dice3d-cube");
-    const stage = button.querySelector(".dice3d-stage");
-    const shadow = button.querySelector(".dice3d-shadow");
-
-    if (!cube || !stage) return;
-
-    const a = randomRotation();
-    const b = randomRotation();
-    const c = randomRotation();
-    const d = randomRotation();
-
-    cube.animate(
-      [
-        { transform: `rotateX(${a.x}deg) rotateY(${a.y}deg) rotateZ(${a.z}deg)` },
-        { transform: `rotateX(${b.x + 360}deg) rotateY(${b.y - 360}deg) rotateZ(${b.z}deg)` },
-        { transform: `rotateX(${c.x + 720}deg) rotateY(${c.y + 360}deg) rotateZ(${c.z + 180}deg)` },
-        { transform: `rotateX(${d.x + 1080}deg) rotateY(${d.y + 720}deg) rotateZ(${d.z + 360}deg)` }
-      ],
-      {
-        duration: 980 + Math.random() * 430,
-        delay: index * -87,
-        iterations: Infinity,
-        easing: "linear"
-      }
-    );
-
-    stage.animate(
-      [
-        { transform: "translate3d(0, 2px, 0)" },
-        { transform: `translate3d(${Math.random() * 6 - 3}px, -5px, 0)` },
-        { transform: `translate3d(${Math.random() * 6 - 3}px, 1px, 0)` }
-      ],
-      {
-        duration: 520 + Math.random() * 260,
-        delay: index * -53,
-        iterations: Infinity,
-        direction: "alternate",
-        easing: "ease-in-out"
-      }
-    );
-
-    if (shadow) {
-      shadow.animate(
-        [
-          { transform: "translateX(-50%) scale(.92)", opacity: .20 },
-          { transform: "translateX(-50%) scale(.66)", opacity: .08 },
-          { transform: "translateX(-50%) scale(1.02)", opacity: .22 }
-        ],
-        {
-          duration: 520 + Math.random() * 260,
-          delay: index * -53,
-          iterations: Infinity,
-          direction: "alternate",
-          easing: "ease-in-out"
-        }
-      );
+    if (heldBefore[index]) {
+      button.classList.remove("waiting", "pending", "rolling");
+      return;
     }
+
+    applySpinVariables(button, index);
+    button.classList.remove("rolling");
+    button.classList.add("pending");
   });
 }
 
-function stopWaitingAnimations(buttons) {
-  buttons.forEach(button => {
-    [
-      button,
-      button.querySelector(".dice3d-stage"),
-      button.querySelector(".dice3d-cube"),
-      button.querySelector(".dice3d-shadow")
-    ].filter(Boolean).forEach(node => {
-      node.getAnimations().forEach(animation => animation.cancel());
-    });
+function freezeSpinningCube(button, fallbackValue) {
+  const cube = button.querySelector(".dice3d-cube");
+  if (!cube) return null;
 
-    button.classList.remove("waiting");
-  });
+  // Capture the exact visual transform BEFORE removing the infinite spin class.
+  const computedTransform = getComputedStyle(cube).transform;
+
+  cube.getAnimations().forEach(animation => animation.cancel());
+  button.getAnimations().forEach(animation => animation.cancel());
+
+  button.classList.remove("waiting", "pending");
+  button.classList.add("rolling");
+
+  cube.style.animation = "none";
+  cube.style.transform =
+    computedTransform && computedTransform !== "none"
+      ? computedTransform
+      : faceTransform(fallbackValue);
+
+  return cube.style.transform;
 }
 
 function renderDice(diceOverride = null, heldOverride = null) {
@@ -2026,7 +2036,8 @@ function renderDice(diceOverride = null, heldOverride = null) {
 
   const held = effectiveHeldState(heldOverride);
 
-  dice.forEach((value, index) => {
+  dice.forEach((rawValue, index) => {
+    const value = Number(rawValue) || 1;
     const button = document.createElement("button");
 
     button.type = "button";
@@ -2035,6 +2046,10 @@ function renderDice(diceOverride = null, heldOverride = null) {
       held[index] ? "held" : "",
       waiting ? "waiting" : ""
     ].filter(Boolean).join(" ");
+
+    if (waiting && !held[index]) {
+      applySpinVariables(button, index);
+    }
 
     button.disabled =
       !isMyTurn() ||
@@ -2074,7 +2089,6 @@ function renderDice(diceOverride = null, heldOverride = null) {
         return;
       }
 
-      // Visual feedback is immediate; the database catches up asynchronously.
       const currentHeld = effectiveHeldState()[index];
       const desiredHeld = !currentHeld;
 
@@ -2084,15 +2098,12 @@ function renderDice(diceOverride = null, heldOverride = null) {
       const version = state.holdVersions[index];
       updateDieHoldVisual(button, desiredHeld);
 
-      // Visual state already changed. Server writes are serialized per die,
-      // so even repeated rapid clicks on one die keep the correct final state.
       queueHoldServerUpdate(index, desiredHeld, version);
     });
 
     area.appendChild(button);
   });
 }
-
 
 function isYahtzeeDice(dice) {
   return Array.isArray(dice) &&
@@ -2155,8 +2166,7 @@ function animateHeldDie(button, _cube, _value) {
 async function animateDiceRoll(
   targetValues,
   heldBefore = [],
-  startValues = null,
-  fromWaiting = false
+  startValues = null
 ) {
   const safeTargets =
     Array.isArray(targetValues) && targetValues.length === 5
@@ -2175,32 +2185,12 @@ async function animateDiceRoll(
 
   let buttons = [...el("diceArea").querySelectorAll(".dice3d-button")];
 
-  const canReuseWaitingScene =
-    fromWaiting &&
-    buttons.length === 5 &&
-    buttons.every(button => button.classList.contains("waiting"));
-
-  if (canReuseWaitingScene) {
-    // Keep the continuously tumbling dice visible until the real server result
-    // is ready, then transition directly into the result animation.
-    stopWaitingAnimations(buttons);
-
-    buttons.forEach((button, index) => {
-      const cube = button.querySelector(".dice3d-cube");
-      if (!cube) return;
-
-      const start = randomRotation();
-      cube.style.transform =
-        `rotateX(${start.x}deg) rotateY(${start.y}deg) rotateZ(${start.z}deg)`;
-      cube.dataset.value = safeStart[index];
-    });
-  } else {
+  if (buttons.length !== 5) {
     renderDice(safeStart, safeHeld);
+    beginPendingRoll(safeHeld);
 
     await new Promise(resolve =>
-      requestAnimationFrame(() =>
-        requestAnimationFrame(resolve)
-      )
+      requestAnimationFrame(resolve)
     );
 
     buttons = [...el("diceArea").querySelectorAll(".dice3d-button")];
@@ -2208,7 +2198,8 @@ async function animateDiceRoll(
 
   if (buttons.length !== 5) {
     console.error("Dice render failed: expected 5 dice, got", buttons.length);
-    renderDice(safeTargets, state.gameState?.held || safeHeld);
+    state.displayDice = [...safeTargets];
+    renderDice(state.displayDice, safeHeld);
     return;
   }
 
@@ -2220,15 +2211,16 @@ async function animateDiceRoll(
     if (!cube) return Promise.resolve();
 
     if (safeHeld[index]) {
+      button.classList.remove("waiting", "pending", "rolling");
       return animateHeldDie(button, cube, target);
     }
 
-    button.classList.add("rolling");
+    const startTransform =
+      freezeSpinningCube(button, safeStart[index]) ||
+      faceTransform(safeStart[index]);
 
     const base = DIE_FACE_TRANSFORMS[target] || DIE_FACE_TRANSFORMS[1];
 
-    // Every roll uses a different physical-looking trajectory while the
-    // final orientation is fixed by the real server-generated die value.
     const turnsX = 3 + Math.floor(Math.random() * 4);
     const turnsY = 3 + Math.floor(Math.random() * 4);
     const turnsZ = 1 + Math.floor(Math.random() * 3);
@@ -2241,15 +2233,10 @@ async function animateDiceRoll(
     const spinY = directionY * turnsY * 360;
     const spinZ = directionZ * turnsZ * 360;
 
-    const sideways = randomBetween(-12, 12);
-    const sideways2 = randomBetween(-8, 8);
-    const jump = randomBetween(17, 27);
-    const duration = 900 + Math.floor(Math.random() * 260);
-    const delay = index * 42;
-
-    const startTransform =
-      cube.style.transform ||
-      faceTransform(Number(cube.dataset.value) || 1);
+    const sideways = randomBetween(-10, 10);
+    const jump = randomBetween(14, 23);
+    const duration = 680 + Math.floor(Math.random() * 180);
+    const delay = index * 28;
 
     const cubeAnimation = cube.animate(
       [
@@ -2259,17 +2246,10 @@ async function animateDiceRoll(
         },
         {
           transform:
-            `rotateX(${spinX * 0.28}deg) ` +
-            `rotateY(${spinY * 0.31}deg) ` +
-            `rotateZ(${spinZ * 0.22}deg)`,
-          offset: 0.23
-        },
-        {
-          transform:
-            `rotateX(${spinX * 0.69}deg) ` +
-            `rotateY(${spinY * 0.72}deg) ` +
-            `rotateZ(${spinZ * 0.67}deg)`,
-          offset: 0.66
+            `rotateX(${spinX * 0.55}deg) ` +
+            `rotateY(${spinY * 0.58}deg) ` +
+            `rotateZ(${spinZ * 0.48}deg)`,
+          offset: 0.5
         },
         {
           transform:
@@ -2282,29 +2262,16 @@ async function animateDiceRoll(
       {
         duration,
         delay,
-        easing: "cubic-bezier(.16,.76,.22,1)",
+        easing: "cubic-bezier(.18,.72,.22,1)",
         fill: "forwards"
       }
     );
 
-    const stageAnimation = button.animate(
+    const buttonAnimation = button.animate(
       [
-        {
-          transform: "translate3d(0, 0, 0) scale(1)",
-          offset: 0
-        },
-        {
-          transform: `translate3d(${sideways}px, ${-jump}px, 0) scale(1.06)`,
-          offset: 0.28
-        },
-        {
-          transform: `translate3d(${sideways2}px, -4px, 0) scale(.985)`,
-          offset: 0.78
-        },
-        {
-          transform: "translate3d(0, 0, 0) scale(1)",
-          offset: 1
-        }
+        { transform: "translate3d(0,0,0)" },
+        { transform: `translate3d(${sideways}px, ${-jump}px, 0)` },
+        { transform: "translate3d(0,0,0)" }
       ],
       {
         duration,
@@ -2316,10 +2283,9 @@ async function animateDiceRoll(
     const shadowAnimation = shadow
       ? shadow.animate(
           [
-            { transform: "translateX(-50%) scale(1)", opacity: 0.22 },
-            { transform: "translateX(-50%) scale(.58)", opacity: 0.08 },
-            { transform: "translateX(-50%) scale(1.08)", opacity: 0.25 },
-            { transform: "translateX(-50%) scale(1)", opacity: 0.22 }
+            { transform: "translateX(-50%) scale(1)", opacity: .2 },
+            { transform: "translateX(-50%) scale(.62)", opacity: .08 },
+            { transform: "translateX(-50%) scale(1)", opacity: .2 }
           ],
           {
             duration,
@@ -2329,30 +2295,30 @@ async function animateDiceRoll(
         )
       : null;
 
-    const all = [
+    const pending = [
       cubeAnimation.finished.catch(() => {}),
-      stageAnimation.finished.catch(() => {})
+      buttonAnimation.finished.catch(() => {})
     ];
 
     if (shadowAnimation) {
-      all.push(shadowAnimation.finished.catch(() => {}));
+      pending.push(shadowAnimation.finished.catch(() => {}));
     }
 
-    return Promise.all(all).then(() => {
+    return Promise.all(pending).then(() => {
       cubeAnimation.cancel();
-      stageAnimation.cancel();
+      buttonAnimation.cancel();
       shadowAnimation?.cancel();
 
+      cube.style.animation = "";
       cube.style.transform = faceTransform(target);
       cube.dataset.value = target;
-      button.classList.remove("rolling");
+      button.classList.remove("rolling", "waiting", "pending");
     });
   });
 
   await Promise.all(animations);
 
-  // Lock the visible result exactly once. Realtime/UI refreshes cannot show
-  // a different set of eyes between the 3D stop and the static face.
+  // The server result becomes the only visible static result.
   state.displayDice = [...safeTargets];
 
   renderDice(
@@ -2623,13 +2589,10 @@ async function rollDice() {
   const diceBefore = [
     ...(state.displayDice || state.gameState.dice || [1, 1, 1, 1, 1])
   ];
-  const fromWaiting = !state.gameState.has_rolled;
 
-  // On the first roll of a turn, do not redraw/reset the dice here.
-  // The continuously tumbling waiting scene stays visible while the RPC runs.
-  if (!fromWaiting) {
-    renderDice(diceBefore, heldBefore);
-  }
+  // Immediately hide every rerolled old face and start indefinite 3D spinning.
+  // Held dice remain visible and unchanged.
+  beginPendingRoll(heldBefore);
 
   el("rollBtn").disabled = true;
   el("statusText").textContent = "주사위가 굴러가는 중입니다...";
@@ -2654,11 +2617,12 @@ async function rollDice() {
     await animateDiceRoll(
       targetValues || state.gameState.dice,
       heldBefore,
-      diceBefore,
-      fromWaiting
+      diceBefore
     );
   } catch (error) {
     console.error(error);
+    state.displayDice = [...diceBefore];
+    renderDice(state.displayDice, heldBefore);
     showToast(error.message || "주사위를 굴리지 못했습니다.");
   } finally {
     state.diceAnimating = false;
@@ -2677,7 +2641,19 @@ async function chooseScore(category) {
       p_room_id: state.activeRoom.id,
       p_category: category
     });
+
     if (error) throw error;
+
+    await loadGameData();
+
+    if (
+      state.page === "game" &&
+      state.gameState &&
+      !state.gameState.finished
+    ) {
+      state.displayDice = null;
+      renderGame();
+    }
   } catch (error) {
     console.error(error);
     showToast(error.message || "점수를 확정하지 못했습니다.");
@@ -2732,11 +2708,16 @@ async function handleGameRefresh() {
     renderScoreTable();
     renderGameHud();
 
+    beginPendingRoll(previous.held);
+
+    await new Promise(resolve =>
+      requestAnimationFrame(resolve)
+    );
+
     await animateDiceRoll(
       state.gameState.dice,
       previous.held,
-      previous.dice,
-      !previous.has_rolled
+      previous.dice
     );
 
     state.diceAnimating = false;
@@ -3210,7 +3191,7 @@ async function showGameOver() {
 
 function stopAdminAutoRefresh() {
   if (state.adminPoller) {
-    clearInterval(state.adminPoller);
+    clearTimeout(state.adminPoller);
     state.adminPoller = null;
   }
 }
@@ -3218,13 +3199,20 @@ function stopAdminAutoRefresh() {
 function startAdminAutoRefresh() {
   stopAdminAutoRefresh();
 
-  renderAdmin({ quiet: false });
-
-  state.adminPoller = setInterval(() => {
-    if (state.page === "admin") {
-      renderAdmin({ quiet: true });
+  const run = async () => {
+    if (state.page !== "admin" || !isAdmin()) {
+      stopAdminAutoRefresh();
+      return;
     }
-  }, 2000);
+
+    await renderAdmin({ quiet: Boolean(state.adminData) });
+
+    if (state.page === "admin") {
+      state.adminPoller = setTimeout(run, 1000);
+    }
+  };
+
+  run();
 }
 
 async function renderAdmin({ quiet = false } = {}) {
@@ -3250,6 +3238,15 @@ async function renderAdmin({ quiet = false } = {}) {
 
     if (state.page === "admin") {
       renderAdminDashboard();
+
+      const badge = el("refreshAdminBtn");
+      const now = new Date().toLocaleTimeString("ko-KR", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit"
+      });
+
+      badge.textContent = `● 자동 업데이트 ${now}`;
     }
   } catch (error) {
     console.error("admin dashboard:", error);
