@@ -267,6 +267,65 @@ function startAccountGuard() {
 }
 
 
+
+async function syncAuthUi(event, session) {
+  // Ignore an obsolete delayed callback.
+  if ((state.session?.access_token || null) !== (session?.access_token || null)) {
+    return;
+  }
+
+  if (!session) {
+    state.profile = null;
+    stopAccountGuard();
+
+    renderHeader();
+    await renderAccount();
+    await refreshHome();
+    await setupGlobalChat();
+    updatePresence();
+    return;
+  }
+
+  await loadProfile();
+
+  // The Auth session is valid even if the profile query has a transient error.
+  renderHeader();
+  await renderAccount();
+
+  startAccountGuard();
+  await clearStaleSpectatorSession();
+  await refreshHome();
+  await setupGlobalChat();
+
+  if (state.page === "admin" && !isAdmin()) {
+    navigate("home");
+  }
+
+  updatePresence();
+}
+
+async function applySignedInSession(session) {
+  if (!session) {
+    throw new Error("로그인 세션을 만들지 못했습니다.");
+  }
+
+  state.session = session;
+
+  // Do not wait for the auth event callback to update the UI.
+  await loadProfile();
+
+  renderHeader();
+  await renderAccount();
+
+  startAccountGuard();
+  await clearStaleSpectatorSession();
+  await refreshHome();
+  await setupGlobalChat();
+  updatePresence();
+
+  return state.profile;
+}
+
 async function init() {
   if (!requireConfigured()) {
     setConnectionBadge(false, "SETUP REQUIRED");
@@ -281,28 +340,40 @@ async function init() {
     startAccountGuard();
   }
 
-  db.auth.onAuthStateChange(async (_event, session) => {
+  db.auth.onAuthStateChange((event, session) => {
+    // IMPORTANT:
+    // Do not await Supabase API calls inside onAuthStateChange.
+    // supabase-js can deadlock when another Supabase request is started
+    // directly from this callback.
     state.session = session;
-    if (session) {
-      await loadProfile();
-      startAccountGuard();
-      await clearStaleSpectatorSession();
-    } else {
+
+    if (!session) {
       state.profile = null;
       stopAccountGuard();
-    }
-
-    renderHeader();
-    renderAccount();
-    await refreshHome();
-    await setupGlobalChat();
-
-    if (!session && (state.page === "lobby" || state.page === "game" || state.page === "admin")) {
       cleanupRoomChannel();
-      navigate("account");
+
+      renderHeader();
+      renderAccount();
+      setGlobalChatAvailability();
+
+      if (
+        state.page === "lobby" ||
+        state.page === "game" ||
+        state.page === "admin"
+      ) {
+        navigate("account");
+      }
+    } else {
+      // Make the signed-in state visible immediately.
+      renderHeader();
     }
 
-    updatePresence();
+    // Run database/realtime work only after the auth callback has returned.
+    window.setTimeout(() => {
+      syncAuthUi(event, session).catch(error => {
+        console.error("auth state sync failed:", error);
+      });
+    }, 0);
   });
 
   await initPresence();
@@ -630,10 +701,13 @@ async function signup(event) {
     }
 
     el("signupForm").reset();
+
+    if (data.session) {
+      await applySignedInSession(data.session);
+    }
+
     showToast("계정이 생성되었습니다.");
-    await loadProfile();
-    renderHeader();
-    await renderAccount();
+    navigate("home");
   } catch (error) {
     console.error(error);
     message.textContent =
@@ -650,19 +724,57 @@ async function login(event) {
   const username = normalizeUsername(el("loginId").value);
   const password = el("loginPassword").value;
   const message = el("authMessage");
+  const submitButton = el("loginForm").querySelector('button[type="submit"]');
 
   message.textContent = "";
+  submitButton.disabled = true;
+  submitButton.textContent = "로그인 중...";
 
   try {
     const email = await usernameToInternalEmail(username);
-    const { error } = await db.auth.signInWithPassword({ email, password });
+
+    const { data, error } = await db.auth.signInWithPassword({
+      email,
+      password
+    });
+
     if (error) throw error;
+    if (!data?.session) throw new Error("로그인 세션이 없습니다.");
+
+    // Explicitly update Playground state from the session returned by Auth.
+    // This avoids depending on onAuthStateChange for the visible login state.
+    await applySignedInSession(data.session);
 
     el("loginForm").reset();
-    showToast(`${username}님, 로그인되었습니다.`);
+
+    if (state.profile?.username) {
+      showToast(`${state.profile.username}님, 로그인되었습니다.`);
+    } else {
+      showToast(`${username}님, 로그인되었습니다.`);
+    }
+
+    navigate("home");
   } catch (error) {
-    console.error(error);
-    message.textContent = "아이디 또는 비밀번호가 올바르지 않습니다.";
+    console.error("login failed:", error);
+
+    // If Auth did create a session but profile sync failed, don't lie to the
+    // user that the password was wrong. Check current session once.
+    const { data: current } = await db.auth.getSession();
+
+    if (current?.session) {
+      state.session = current.session;
+      message.textContent =
+        "로그인은 되었지만 프로필을 불러오지 못했습니다. 페이지를 새로고침해 주세요.";
+      renderHeader();
+    } else {
+      state.session = null;
+      state.profile = null;
+      message.textContent = "아이디 또는 비밀번호가 올바르지 않습니다.";
+      renderHeader();
+    }
+  } finally {
+    submitButton.disabled = false;
+    submitButton.textContent = "로그인";
   }
 }
 
