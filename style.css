@@ -1451,14 +1451,6 @@ input:focus {
   opacity: 1;
 }
 
-.dice3d-button:not(:disabled):hover .dice3d-cube {
-  filter: brightness(1.025);
-}
-
-.dice3d-button:not(:disabled):hover .dice3d-stage {
-  transform: translateY(-2px);
-}
-
 .dice3d-button:focus-visible .dice3d-stage::after {
   content: "";
   position: absolute;
@@ -1488,7 +1480,7 @@ input:focus {
   height: var(--dice-size);
   transform-style: preserve-3d;
   will-change: transform;
-  transition: transform .24s cubic-bezier(.2,.8,.2,1);
+  transition: none;
   z-index: 2;
 }
 
@@ -2133,5 +2125,293 @@ body.spectator-mode #rollBtn {
 
   .global-chat-form {
     grid-template-columns: 1fr;
+  }
+}
+
+
+/* ============================================================
+   Demo v7: stable dice hover, all score sheets, celebration
+   ============================================================ */
+
+.dice3d-button:not(:disabled):hover {
+  background: rgba(109, 74, 255, .045);
+  box-shadow: inset 0 0 0 2px rgba(109, 74, 255, .12);
+}
+
+/* Never apply filter/transform to the 3D cube merely because of hover. */
+.dice3d-button:hover .dice3d-cube,
+.dice3d-button:hover .dice3d-stage {
+  filter: none !important;
+}
+
+.player-chip-main {
+  display: grid;
+  min-width: 0;
+}
+
+.player-chip-meta {
+  margin-top: 2px;
+  color: #98a2b3;
+  font-size: 9px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.score-panel {
+  min-width: 0;
+}
+
+.score-table {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.player-score-card {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #e4e7ec;
+  border-radius: 16px;
+  background: #fbfcfd;
+}
+
+.player-score-card.active {
+  border-color: #b8a9ff;
+  background: #faf8ff;
+  box-shadow: 0 0 0 3px rgba(109, 74, 255, .07);
+}
+
+.player-score-card.mine {
+  border-style: solid;
+}
+
+.player-score-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.player-score-card-head > div {
+  display: grid;
+  min-width: 0;
+}
+
+.player-score-card-head > div > strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+}
+
+.player-score-card-head small {
+  margin-top: 3px;
+  color: #98a2b3;
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.player-score-total {
+  flex: 0 0 auto;
+  padding: 6px 8px;
+  border-radius: 9px;
+  background: #182230;
+  color: white;
+  font-size: 13px;
+}
+
+.score-section-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 5px;
+  color: #6941c6;
+  font-size: 8px;
+  font-weight: 950;
+  letter-spacing: .12em;
+}
+
+.score-section-label::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: #e9e4ff;
+}
+
+.score-section-label.lower-label {
+  margin-top: 12px;
+  color: #475467;
+}
+
+.score-section-label.lower-label::after {
+  background: #eaecf0;
+}
+
+.player-score-upper,
+.player-score-lower {
+  display: grid;
+  gap: 4px;
+}
+
+.player-score-card .score-row {
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+
+.player-score-card .score-name {
+  font-size: 10px;
+}
+
+.player-score-card .score-rule {
+  font-size: 8px;
+}
+
+.player-score-card .score-value {
+  min-width: 28px;
+  font-size: 11px;
+}
+
+.player-score-card .score-row.selectable {
+  cursor: pointer;
+}
+
+.score-summary-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: #f2f4f7;
+  color: #475467;
+  font-size: 10px;
+}
+
+.score-summary-row > span {
+  display: grid;
+}
+
+.score-summary-row small {
+  margin-top: 1px;
+  color: #98a2b3;
+  font-size: 8px;
+}
+
+.score-summary-row.bonus-earned {
+  background: #ecfdf3;
+  color: #067647;
+}
+
+.yahtzee-celebration {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(109,74,255,.10), transparent 58%);
+}
+
+.yahtzee-celebration-card {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  min-width: min(430px, calc(100vw - 36px));
+  padding: 30px 34px;
+  border: 1px solid rgba(255,255,255,.8);
+  border-radius: 28px;
+  background: rgba(21, 26, 37, .93);
+  color: white;
+  box-shadow: 0 28px 90px rgba(16,24,40,.3);
+  animation: yahtzee-card-pop .42s cubic-bezier(.17,.84,.3,1.35);
+}
+
+.yahtzee-kicker {
+  color: #cbbfff;
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: .18em;
+}
+
+.yahtzee-celebration-card > strong {
+  margin: 4px 0 6px;
+  font-size: clamp(44px, 8vw, 76px);
+  line-height: 1;
+  letter-spacing: -.055em;
+}
+
+.yahtzee-celebration-card > span:last-child {
+  color: #d0d5dd;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.yahtzee-confetti {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.confetti-piece {
+  position: absolute;
+  top: -24px;
+  left: var(--x);
+  width: 10px;
+  height: 17px;
+  border-radius: 2px;
+  background: #6d4aff;
+  animation:
+    yahtzee-confetti-fall var(--duration) cubic-bezier(.15,.6,.25,1)
+    var(--delay) forwards;
+}
+
+.confetti-piece:nth-child(4n + 2) { background: #12b76a; }
+.confetti-piece:nth-child(4n + 3) { background: #f79009; }
+.confetti-piece:nth-child(4n + 4) { background: #f04438; }
+
+@keyframes yahtzee-card-pop {
+  0% { transform: scale(.72); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes yahtzee-confetti-fall {
+  0% {
+    transform: translate3d(0, -20px, 0) rotate(0deg);
+    opacity: 0;
+  }
+  8% { opacity: 1; }
+  100% {
+    transform:
+      translate3d(var(--drift), calc(100vh + 60px), 0)
+      rotate(var(--rot));
+    opacity: .92;
+  }
+}
+
+@media (min-width: 1081px) {
+  .game-layout {
+    grid-template-columns:
+      minmax(330px, .78fr)
+      minmax(600px, 1.48fr)
+      minmax(280px, .62fr);
+  }
+}
+
+@media (max-width: 1080px) {
+  .score-table {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 780px) {
+  .profile-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .profile-stat.accent {
+    grid-column: auto;
   }
 }

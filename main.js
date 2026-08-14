@@ -13,19 +13,23 @@ const db = IS_CONFIGURED
   ? window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY)
   : null;
 
+const UPPER_CATEGORY_KEYS = [
+  "ones", "twos", "threes", "fours", "fives", "sixes"
+];
+
 const categories = [
-  { key: "ones", name: "Aces", rule: "1의 합" },
-  { key: "twos", name: "Deuces", rule: "2의 합" },
-  { key: "threes", name: "Threes", rule: "3의 합" },
-  { key: "fours", name: "Fours", rule: "4의 합" },
-  { key: "fives", name: "Fives", rule: "5의 합" },
-  { key: "sixes", name: "Sixes", rule: "6의 합" },
-  { key: "choice", name: "Choice", rule: "모든 주사위의 합" },
-  { key: "fourKind", name: "Four of a Kind", rule: "같은 숫자 4개 이상" },
-  { key: "fullHouse", name: "Full House", rule: "2개 + 3개" },
-  { key: "smallStraight", name: "Small Straight", rule: "연속 4개 → 15점" },
-  { key: "largeStraight", name: "Large Straight", rule: "연속 5개 → 30점" },
-  { key: "yacht", name: "Yacht", rule: "5개 모두 같음 → 50점" }
+  { key: "ones", name: "Aces", rule: "1의 눈 총합", section: "upper" },
+  { key: "twos", name: "Deuces", rule: "2의 눈 총합", section: "upper" },
+  { key: "threes", name: "Threes", rule: "3의 눈 총합", section: "upper" },
+  { key: "fours", name: "Fours", rule: "4의 눈 총합", section: "upper" },
+  { key: "fives", name: "Fives", rule: "5의 눈 총합", section: "upper" },
+  { key: "sixes", name: "Sixes", rule: "6의 눈 총합", section: "upper" },
+  { key: "choice", name: "Choice", rule: "5개 주사위의 총합", section: "lower" },
+  { key: "fourKind", name: "4 of a Kind", rule: "같은 눈 4개 이상 → 전체 합", section: "lower" },
+  { key: "fullHouse", name: "Full House", rule: "3개 + 2개 → 25점", section: "lower" },
+  { key: "smallStraight", name: "Small Straight", rule: "연속 4개 → 30점", section: "lower" },
+  { key: "largeStraight", name: "Large Straight", rule: "연속 5개 → 40점", section: "lower" },
+  { key: "yacht", name: "Yahtzee", rule: "5개 모두 같음 → 50점", section: "lower" }
 ];
 
 
@@ -77,6 +81,9 @@ const state = {
   roomChannel: null,
   roomChannelRoomId: null,
   diceAnimating: false,
+  optimisticHolds: {},
+  holdVersions: [0, 0, 0, 0, 0],
+  yahtzeeCelebrationTimer: null,
   adminData: null,
   bgmEnabled: false,
   bgmTrackIndex: 0,
@@ -84,6 +91,14 @@ const state = {
   toastTimer: null,
   busy: false
 };
+
+const holdRequestQueues = [
+  Promise.resolve(),
+  Promise.resolve(),
+  Promise.resolve(),
+  Promise.resolve(),
+  Promise.resolve()
+];
 
 const el = id => document.getElementById(id);
 
@@ -450,7 +465,7 @@ async function renderAccount() {
   if (!state.profile) await loadProfile();
   if (!state.profile) return;
 
-  const { wins, losses, draws, username } = state.profile;
+  const { wins, losses, draws, yacht_rolls = 0, username } = state.profile;
   const games = wins + losses + draws;
   const winRate = games
     ? Math.round((wins / games) * 1000) / 10
@@ -464,6 +479,7 @@ async function renderAccount() {
   el("statWins").textContent = wins;
   el("statLosses").textContent = losses;
   el("statDraws").textContent = draws;
+  el("statYachts").textContent = yacht_rolls;
   el("statWinRate").textContent = `${winRate}%`;
 
   const { data: history, error } = await db
@@ -586,7 +602,7 @@ async function loadProfile() {
 
   let { data, error } = await db
     .from("profiles")
-    .select("id, username, wins, losses, draws, role")
+    .select("id, username, wins, losses, draws, yacht_rolls, role")
     .eq("id", currentUserId())
     .maybeSingle();
 
@@ -601,7 +617,7 @@ async function loadProfile() {
 
     const retry = await db
       .from("profiles")
-      .select("id, username, wins, losses, draws, role")
+      .select("id, username, wins, losses, draws, yacht_rolls, role")
       .eq("id", currentUserId())
       .maybeSingle();
 
@@ -1207,7 +1223,7 @@ async function loadRoomPlayers() {
 
   const { data, error } = await db
     .from("room_players")
-    .select("seat, user_id, profiles(username)")
+    .select("seat, user_id, yacht_bonus, yacht_rolls, profiles(username, wins, yacht_rolls)")
     .eq("room_id", state.activeRoom.id)
     .order("seat", { ascending: true });
 
@@ -1219,7 +1235,11 @@ async function loadRoomPlayers() {
   state.roomPlayers = (data || []).map(row => ({
     seat: row.seat,
     userId: row.user_id,
-    username: row.profiles?.username || "Player"
+    username: row.profiles?.username || "Player",
+    wins: Number(row.profiles?.wins || 0),
+    yachtRolls: Number(row.profiles?.yacht_rolls || 0),
+    gameYachtRolls: Number(row.yacht_rolls || 0),
+    yachtBonus: Number(row.yacht_bonus || 0)
   }));
 }
 
@@ -1471,16 +1491,47 @@ function isMyTurn() {
 
 function playerScoreMap(userId) {
   const map = {};
+
   state.scores
     .filter(row => row.user_id === userId)
-    .forEach(row => { map[row.category] = row.score; });
+    .forEach(row => {
+      map[row.category] = Number(row.score || 0);
+    });
+
   return map;
 }
 
-function totalFor(userId) {
+function upperSubtotalFor(userId) {
+  const scoreMap = playerScoreMap(userId);
+
+  return UPPER_CATEGORY_KEYS.reduce(
+    (sum, key) => sum + Number(scoreMap[key] || 0),
+    0
+  );
+}
+
+function upperBonusFor(userId) {
+  return upperSubtotalFor(userId) >= 63 ? 35 : 0;
+}
+
+function yachtBonusFor(userId) {
+  return Number(
+    state.roomPlayers.find(player => player.userId === userId)?.yachtBonus || 0
+  );
+}
+
+function baseCategoryTotalFor(userId) {
   return state.scores
     .filter(row => row.user_id === userId)
-    .reduce((sum, row) => sum + row.score, 0);
+    .reduce((sum, row) => sum + Number(row.score || 0), 0);
+}
+
+function totalFor(userId) {
+  return (
+    baseCategoryTotalFor(userId) +
+    upperBonusFor(userId) +
+    yachtBonusFor(userId)
+  );
 }
 
 function renderGame() {
@@ -1506,7 +1557,10 @@ function renderPlayerStrip() {
       `player-chip ${player.seat === state.gameState.current_seat ? "active" : ""}`;
 
     chip.innerHTML = `
-      <span class="player-chip-name">${escapeHTML(player.username)}</span>
+      <span class="player-chip-main">
+        <span class="player-chip-name">${escapeHTML(player.username)}</span>
+        <small class="player-chip-meta">승 ${player.wins} · 야추 ${player.yachtRolls}</small>
+      </span>
       <span class="player-chip-score">${totalFor(player.userId)}점</span>
     `;
     strip.appendChild(chip);
@@ -1563,6 +1617,80 @@ function faceTransform(value, extraX = 0, extraY = 0, extraZ = 0) {
   ].join(" ");
 }
 
+function effectiveHeldState(baseHeld = null) {
+  const held = [
+    ...(baseHeld ||
+      state.gameState?.held ||
+      [false, false, false, false, false])
+  ];
+
+  for (let index = 0; index < 5; index += 1) {
+    if (Object.prototype.hasOwnProperty.call(state.optimisticHolds, index)) {
+      held[index] = Boolean(state.optimisticHolds[index]);
+    }
+  }
+
+  return held;
+}
+
+function updateDieHoldVisual(button, held) {
+  if (!button) return;
+
+  button.classList.toggle("held", held);
+
+  const label = button.querySelector(".dice3d-hold-label");
+  if (label) label.textContent = held ? "HOLD" : "";
+}
+
+function clearOptimisticHolds() {
+  state.optimisticHolds = {};
+}
+
+function queueHoldServerUpdate(index, desiredHeld, version) {
+  holdRequestQueues[index] = holdRequestQueues[index]
+    .catch(() => {})
+    .then(() =>
+      setHoldOptimistically(index, desiredHeld, version)
+    );
+}
+
+async function setHoldOptimistically(index, desiredHeld, version) {
+  try {
+    const { error } = await db.rpc("set_yacht_hold", {
+      p_room_id: state.activeRoom.id,
+      p_die_index: index + 1,
+      p_held: desiredHeld
+    });
+
+    if (error) throw error;
+
+    // Only the newest click for this die is allowed to clear the local override.
+    if (state.holdVersions[index] === version) {
+      await loadGameData();
+      delete state.optimisticHolds[index];
+
+      if (state.page === "game") {
+        renderDice();
+        renderScoreTable();
+      }
+    }
+  } catch (error) {
+    console.error("hold update:", error);
+
+    if (state.holdVersions[index] === version) {
+      delete state.optimisticHolds[index];
+      await loadGameData();
+
+      if (state.page === "game") {
+        renderDice();
+        renderScoreTable();
+      }
+    }
+
+    showToast(error.message || "주사위 HOLD를 반영하지 못했습니다.");
+  }
+}
+
 function renderDice(diceOverride = null, heldOverride = null) {
   const area = el("diceArea");
   area.innerHTML = "";
@@ -1572,10 +1700,7 @@ function renderDice(diceOverride = null, heldOverride = null) {
     state.gameState?.dice ||
     [1, 1, 1, 1, 1];
 
-  const held =
-    heldOverride ||
-    state.gameState?.held ||
-    [false, false, false, false, false];
+  const held = effectiveHeldState(heldOverride);
 
   dice.forEach((value, index) => {
     const button = document.createElement("button");
@@ -1591,7 +1716,8 @@ function renderDice(diceOverride = null, heldOverride = null) {
       !isMyTurn() ||
       !state.gameState.has_rolled ||
       state.gameState.finished ||
-      state.diceAnimating;
+      state.diceAnimating ||
+      state.isSpectator;
 
     button.setAttribute("aria-label", `${index + 1}번째 주사위: ${value}`);
     button.dataset.dieIndex = index;
@@ -1609,28 +1735,73 @@ function renderDice(diceOverride = null, heldOverride = null) {
       <span class="dice3d-hold-label">${held[index] ? "HOLD" : ""}</span>
     `;
 
-    button.addEventListener("click", async () => {
-      if (!isMyTurn() || state.busy || state.diceAnimating) return;
-
-      state.busy = true;
-
-      try {
-        const { error } = await db.rpc("toggle_yacht_hold", {
-          p_room_id: state.activeRoom.id,
-          p_die_index: index + 1
-        });
-
-        if (error) throw error;
-      } catch (error) {
-        console.error(error);
-        showToast(error.message || "주사위를 고정하지 못했습니다.");
-      } finally {
-        state.busy = false;
+    button.addEventListener("click", () => {
+      if (
+        !isMyTurn() ||
+        state.busy ||
+        state.diceAnimating ||
+        state.isSpectator ||
+        !state.gameState?.has_rolled
+      ) {
+        return;
       }
+
+      // Visual feedback is immediate; the database catches up asynchronously.
+      const currentHeld = effectiveHeldState()[index];
+      const desiredHeld = !currentHeld;
+
+      state.optimisticHolds[index] = desiredHeld;
+      state.holdVersions[index] += 1;
+
+      const version = state.holdVersions[index];
+      updateDieHoldVisual(button, desiredHeld);
+
+      // Visual state already changed. Server writes are serialized per die,
+      // so even repeated rapid clicks on one die keep the correct final state.
+      queueHoldServerUpdate(index, desiredHeld, version);
     });
 
     area.appendChild(button);
   });
+}
+
+
+function isYahtzeeDice(dice) {
+  return Array.isArray(dice) &&
+    dice.length === 5 &&
+    dice.every(value => value === dice[0]);
+}
+
+function triggerYahtzeeCelebration(playerName = "") {
+  const overlay = el("yahtzeeCelebration");
+  const confetti = el("yahtzeeConfetti");
+
+  clearTimeout(state.yahtzeeCelebrationTimer);
+
+  el("yahtzeeCelebrationPlayer").textContent =
+    playerName
+      ? `${playerName}님이 Yahtzee를 완성했습니다!`
+      : "Yahtzee를 완성했습니다!";
+
+  confetti.innerHTML = "";
+
+  for (let i = 0; i < 56; i += 1) {
+    const piece = document.createElement("span");
+    piece.className = "confetti-piece";
+    piece.style.setProperty("--x", `${Math.random() * 100}vw`);
+    piece.style.setProperty("--drift", `${-90 + Math.random() * 180}px`);
+    piece.style.setProperty("--rot", `${Math.random() * 900 - 450}deg`);
+    piece.style.setProperty("--delay", `${Math.random() * 0.26}s`);
+    piece.style.setProperty("--duration", `${0.9 + Math.random() * 0.65}s`);
+    confetti.appendChild(piece);
+  }
+
+  overlay.classList.remove("hidden");
+
+  state.yahtzeeCelebrationTimer = setTimeout(() => {
+    overlay.classList.add("hidden");
+    confetti.innerHTML = "";
+  }, 1900);
 }
 
 function randomBetween(min, max) {
@@ -1834,6 +2005,13 @@ async function animateDiceRoll(
   });
 
   await Promise.all(animations);
+
+  if (
+    isYahtzeeDice(safeTargets) &&
+    safeHeld.some(held => !held)
+  ) {
+    triggerYahtzeeCelebration(currentTurnPlayer()?.username || "");
+  }
 }
 
 function previewScore(category, dice) {
@@ -1852,67 +2030,176 @@ function previewScore(category, dice) {
   if (category === "fourKind") return [...counts.values()].some(v => v >= 4) ? sum : 0;
   if (category === "fullHouse") {
     const c = [...counts.values()].sort((a, b) => a - b);
-    return c.length === 2 && c[0] === 2 && c[1] === 3 ? sum : 0;
+    return c.length === 2 && c[0] === 2 && c[1] === 3 ? 25 : 0;
   }
   if (category === "smallStraight") {
     return (
       [1,2,3,4].every(v => unique.includes(v)) ||
       [2,3,4,5].every(v => unique.includes(v)) ||
       [3,4,5,6].every(v => unique.includes(v))
-    ) ? 15 : 0;
+    ) ? 30 : 0;
   }
   if (category === "largeStraight") {
     const s = JSON.stringify(unique);
     return s === JSON.stringify([1,2,3,4,5]) ||
-           s === JSON.stringify([2,3,4,5,6]) ? 30 : 0;
+           s === JSON.stringify([2,3,4,5,6]) ? 40 : 0;
   }
   if (category === "yacht") return counts.size === 1 ? 50 : 0;
   return 0;
 }
 
-function renderScoreTable() {
-  const player = currentTurnPlayer();
-  const table = el("scoreTable");
-  table.innerHTML = "";
-  if (!player) return;
+function createScoreCategoryRow(player, category, scoreMap, isTurnPlayer) {
+  const used = Object.prototype.hasOwnProperty.call(scoreMap, category.key);
 
-  const scoreMap = playerScoreMap(player.userId);
+  const canChoose =
+    isTurnPlayer &&
+    player.userId === currentUserId() &&
+    !state.isSpectator &&
+    state.gameState.has_rolled &&
+    !used &&
+    !state.gameState.finished &&
+    !state.diceAnimating;
 
-  categories.forEach(category => {
-    const used = Object.prototype.hasOwnProperty.call(scoreMap, category.key);
-    const canChoose =
-      isMyTurn() &&
-      state.gameState.has_rolled &&
-      !used &&
-      !state.gameState.finished &&
-      !state.diceAnimating;
+  const canPreview =
+    isTurnPlayer &&
+    state.gameState.has_rolled &&
+    !used &&
+    !state.gameState.finished;
 
-    const preview = state.gameState.has_rolled
+  const value = used
+    ? scoreMap[category.key]
+    : canPreview
       ? previewScore(category.key, state.gameState.dice)
-      : null;
+      : "—";
 
-    const button = document.createElement("button");
-    button.className = `score-row ${used ? "used" : ""}`;
-    button.disabled = !canChoose;
+  const button = document.createElement("button");
+  button.className =
+    `score-row ${used ? "used" : ""} ${canChoose ? "selectable" : ""}`;
+  button.disabled = !canChoose;
 
-    button.innerHTML = `
-      <span>
-        <span class="score-name">${category.name}</span>
-        <span class="score-rule">${category.rule}</span>
-      </span>
-      <span class="score-value ${canChoose ? "score-preview" : ""}">
-        ${used ? scoreMap[category.key] : state.gameState.has_rolled ? preview : "—"}
-      </span>
-    `;
+  button.innerHTML = `
+    <span>
+      <span class="score-name">${category.name}</span>
+      <span class="score-rule">${category.rule}</span>
+    </span>
+    <span class="score-value ${canChoose ? "score-preview" : ""}">
+      ${value}
+    </span>
+  `;
 
-    if (canChoose) {
-      button.addEventListener("click", () => chooseScore(category.key));
-    }
+  if (canChoose) {
+    button.addEventListener("click", () => chooseScore(category.key));
+  }
 
-    table.appendChild(button);
-  });
+  return button;
 }
 
+function scoreSummaryRow(label, detail, value, className = "") {
+  const row = document.createElement("div");
+  row.className = `score-summary-row ${className}`.trim();
+
+  row.innerHTML = `
+    <span>
+      <strong>${label}</strong>
+      ${detail ? `<small>${detail}</small>` : ""}
+    </span>
+    <strong>${value}</strong>
+  `;
+
+  return row;
+}
+
+function renderScoreTable() {
+  const table = el("scoreTable");
+  table.innerHTML = "";
+
+  if (!state.roomPlayers.length || !state.gameState) return;
+
+  state.roomPlayers.forEach(player => {
+    const scoreMap = playerScoreMap(player.userId);
+    const isTurnPlayer =
+      player.seat === state.gameState.current_seat;
+
+    const card = document.createElement("section");
+    card.className =
+      `player-score-card ${isTurnPlayer ? "active" : ""} ${
+        player.userId === currentUserId() ? "mine" : ""
+      }`;
+
+    const upperSubtotal = upperSubtotalFor(player.userId);
+    const upperBonus = upperBonusFor(player.userId);
+    const yachtBonus = yachtBonusFor(player.userId);
+
+    card.innerHTML = `
+      <div class="player-score-card-head">
+        <div>
+          <strong>${escapeHTML(player.username)}</strong>
+          <small>
+            승 ${player.wins}
+            · 누적 야추 ${player.yachtRolls}
+            · 이번 게임 야추 ${player.gameYachtRolls}
+          </small>
+        </div>
+        <strong class="player-score-total">${totalFor(player.userId)}점</strong>
+      </div>
+      <div class="score-section-label">
+        <span>UPPER SECTION</span>
+      </div>
+      <div class="player-score-upper"></div>
+      <div class="score-section-label lower-label">
+        <span>LOWER SECTION</span>
+      </div>
+      <div class="player-score-lower"></div>
+    `;
+
+    const upperContainer = card.querySelector(".player-score-upper");
+    const lowerContainer = card.querySelector(".player-score-lower");
+
+    categories
+      .filter(category => category.section === "upper")
+      .forEach(category => {
+        upperContainer.appendChild(
+          createScoreCategoryRow(player, category, scoreMap, isTurnPlayer)
+        );
+      });
+
+    upperContainer.appendChild(
+      scoreSummaryRow(
+        "상단 합계",
+        "63점 이상이면 보너스",
+        `${upperSubtotal} / 63`
+      )
+    );
+
+    upperContainer.appendChild(
+      scoreSummaryRow(
+        "상단 보너스",
+        "63점 이상 +35",
+        upperBonus ? "+35" : "0",
+        upperBonus ? "bonus-earned" : ""
+      )
+    );
+
+    categories
+      .filter(category => category.section === "lower")
+      .forEach(category => {
+        lowerContainer.appendChild(
+          createScoreCategoryRow(player, category, scoreMap, isTurnPlayer)
+        );
+      });
+
+    lowerContainer.appendChild(
+      scoreSummaryRow(
+        "추가 Yahtzee 보너스",
+        "+100 × 추가 Yahtzee",
+        yachtBonus ? `+${yachtBonus}` : "0",
+        yachtBonus ? "bonus-earned" : ""
+      )
+    );
+
+    table.appendChild(card);
+  });
+}
 function renderGameHud() {
   const player = currentTurnPlayer();
   if (!player) return;
@@ -1928,8 +2215,14 @@ function renderGameHud() {
   el("currentPlayerText").textContent = player.username;
   el("roundText").textContent = `${Math.min(used + 1, 12)} / 12`;
   el("rollsText").textContent = state.gameState.rolls_left;
-  el("scoreSheetPlayer").textContent = `${player.username}의 점수표`;
-  el("totalScore").textContent = totalFor(player.userId);
+  el("scoreSheetPlayer").textContent = "모든 플레이어 점수표";
+
+  const me = state.roomPlayers.find(
+    roomPlayer => roomPlayer.userId === currentUserId()
+  );
+
+  el("totalScore").textContent =
+    me ? totalFor(me.userId) : "—";
 
   const rollBtn = el("rollBtn");
   rollBtn.disabled =
@@ -1961,6 +2254,8 @@ async function rollDice() {
   state.busy = true;
   state.diceAnimating = true;
 
+  clearOptimisticHolds();
+
   const heldBefore = [...(state.gameState.held || [false, false, false, false, false])];
   const diceBefore = [...(state.gameState.dice || [1, 1, 1, 1, 1])];
 
@@ -1980,6 +2275,13 @@ async function rollDice() {
     const targetValues = Array.isArray(data) ? data : null;
     await loadGameData();
 
+    if (isYahtzeeDice(state.gameState?.dice)) {
+      await Promise.all([
+        loadRoomPlayers(),
+        loadProfile()
+      ]);
+    }
+
     await animateDiceRoll(
       targetValues || state.gameState.dice,
       heldBefore,
@@ -1996,8 +2298,9 @@ async function rollDice() {
 }
 
 async function chooseScore(category) {
-  if (!state.activeRoom || state.busy || !isMyTurn()) return;
+  if (!state.activeRoom || state.busy || !isMyTurn() || state.isSpectator) return;
 
+  clearOptimisticHolds();
   state.busy = true;
   try {
     const { error } = await db.rpc("choose_yacht_score", {
@@ -2036,6 +2339,13 @@ async function handleGameRefresh() {
     renderGameHud();
     renderChat();
     return;
+  }
+
+  if (
+    previous &&
+    previous.current_seat !== state.gameState.current_seat
+  ) {
+    clearOptimisticHolds();
   }
 
   const remoteRollDetected =
@@ -2224,6 +2534,37 @@ function insertGlobalEmoji(emoji) {
   const cursor = start + emoji.length;
   input.focus();
   input.setSelectionRange(cursor, cursor);
+}
+
+async function sendGlobalEmoji(emoji) {
+  if (!isLoggedIn()) return;
+
+  try {
+    const { error } = await db.rpc("send_global_message", {
+      p_body: emoji
+    });
+
+    if (error) throw error;
+  } catch (error) {
+    console.error("global emoji:", error);
+    showToast("이모티콘을 보내지 못했습니다.");
+  }
+}
+
+async function sendRoomEmoji(emoji) {
+  if (!isLoggedIn() || !state.activeRoom) return;
+
+  try {
+    const { error } = await db.rpc("send_room_message", {
+      p_room_id: state.activeRoom.id,
+      p_body: emoji
+    });
+
+    if (error) throw error;
+  } catch (error) {
+    console.error("room emoji:", error);
+    showToast("이모티콘을 보내지 못했습니다.");
+  }
 }
 
 
@@ -2580,6 +2921,7 @@ function adminUsersTable(users) {
           <th>승</th>
           <th>패</th>
           <th>무</th>
+          <th>야추</th>
           <th>관리</th>
         </tr>
       </thead>
@@ -2596,6 +2938,7 @@ function adminUsersTable(users) {
               <td>${escapeHTML(user.wins)}</td>
               <td>${escapeHTML(user.losses)}</td>
               <td>${escapeHTML(user.draws)}</td>
+              <td>${escapeHTML(user.yacht_rolls || 0)}</td>
               <td>
                 ${
                   protectedAccount
@@ -2834,8 +3177,8 @@ el("globalEmojiPicker").addEventListener("click", event => {
   const button = event.target.closest("[data-global-emoji]");
   if (!button) return;
 
-  insertGlobalEmoji(button.dataset.globalEmoji);
-  el("globalEmojiPicker").classList.add("hidden");
+  // Send immediately. Keep the picker open for rapid repeated emoji.
+  sendGlobalEmoji(button.dataset.globalEmoji);
 });
 
 el("emojiToggleBtn").addEventListener("click", toggleEmojiPicker);
@@ -2843,8 +3186,8 @@ el("emojiPicker").addEventListener("click", event => {
   const button = event.target.closest("[data-emoji]");
   if (!button) return;
 
-  insertEmoji(button.dataset.emoji);
-  el("emojiPicker").classList.add("hidden");
+  // Send immediately. Keep the picker open for rapid repeated emoji.
+  sendRoomEmoji(button.dataset.emoji);
 });
 
 document.addEventListener("click", event => {
