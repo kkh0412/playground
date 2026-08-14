@@ -3286,3 +3286,61 @@ body.spectator-mode #rollBtn {
 .bgm-select-chevron {
   display: none !important;
 }
+
+
+/* ============================================================
+   Demo v20 — playground goat branding + shared room BGM sync polish
+   ============================================================ */
+
+.brand-mark {
+  overflow: hidden;
+  background: transparent;
+  box-shadow: none;
+}
+
+.brand-mark img {
+  display: block;
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  object-fit: cover;
+  box-shadow: 0 8px 22px rgba(109, 74, 255, 0.28);
+}
+
+.hero-panel {
+  grid-template-columns: 1.2fr 0.88fr 0.72fr;
+  align-items: center;
+}
+
+.hero-art-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hero-goat-image {
+  width: min(100%, 350px);
+  aspect-ratio: 1 / 1;
+  display: block;
+  object-fit: contain;
+  filter: drop-shadow(0 16px 28px rgba(12, 14, 30, 0.26));
+}
+
+@media (max-width: 980px) {
+  .hero-panel {
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+
+  .hero-art-panel {
+    order: 2;
+  }
+
+  .hero-stats {
+    order: 3;
+  }
+
+  .hero-goat-image {
+    width: min(100%, 290px);
+  }
+}

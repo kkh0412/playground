@@ -485,6 +485,8 @@ const state = {
   roomBgm: null,
   bgmLastDriftCheck: 0,
   bgmPlaybackBlocked: false,
+  bgmSyncTimer: null,
+  bgmLastSharedPushAt: 0,
   accountGuardPoller: null,
   accountGuardMisses: 0,
   adminPoller: null,
@@ -3472,6 +3474,66 @@ function allBgmTrackSelects() {
   ].filter(Boolean);
 }
 
+
+function isRoomBgmSyncLeader() {
+  return Boolean(
+    state.activeRoom &&
+    currentUserId() &&
+    state.activeRoom.hostId === currentUserId() &&
+    !state.isSpectator
+  );
+}
+
+function stopRoomBgmSyncTimer() {
+  if (state.bgmSyncTimer !== null) {
+    clearInterval(state.bgmSyncTimer);
+    state.bgmSyncTimer = null;
+  }
+}
+
+function startRoomBgmSyncTimer() {
+  stopRoomBgmSyncTimer();
+
+  if (
+    !isRoomBgmSyncLeader() ||
+    !state.roomBgm?.enabled
+  ) {
+    return;
+  }
+
+  state.bgmSyncTimer = setInterval(async () => {
+    const audio = el("bgmAudio");
+
+    if (
+      !audio ||
+      audio.paused ||
+      !Number.isFinite(audio.currentTime)
+    ) {
+      return;
+    }
+
+    const now = Date.now();
+
+    if (now - state.bgmLastSharedPushAt < 2500) {
+      return;
+    }
+
+    state.bgmLastSharedPushAt = now;
+
+    try {
+      await setRoomBgmState({
+        enabled: true,
+        trackIndex: bgmTrackIndexForTime(audio.currentTime),
+        positionSec: audio.currentTime
+      }, {
+        applyLocally: false
+      });
+    } catch (error) {
+      console.warn("shared BGM heartbeat:", error);
+    }
+  }, 3500);
+}
+
 function allBgmToggleButtons() {
   return [
     el("bgmToggleBtn"),
@@ -3588,7 +3650,9 @@ async function setRoomBgmState({
   enabled,
   trackIndex,
   positionSec
-}) {
+}, {
+  applyLocally = true
+} = {}) {
   if (!state.activeRoom || state.isSpectator) {
     return null;
   }
@@ -3605,7 +3669,7 @@ async function setRoomBgmState({
 
   if (error) throw error;
 
-  if (data) {
+  if (data && applyLocally) {
     await applyRoomBgmState(
       {
         bgm_enabled: data.enabled,
@@ -3802,6 +3866,11 @@ function startBgmSegmentMonitor() {
       allBgmTrackSelects().forEach(select => {
         select.value = String(currentIndex);
       });
+
+      localStorage.setItem(
+        "playground_bgm_track",
+        String(currentIndex)
+      );
     }
 
     // Correct drift between players against the room's server timestamp.
@@ -3818,7 +3887,7 @@ function startBgmSegmentMonitor() {
 
       if (
         Number.isFinite(expected) &&
-        Math.abs(audio.currentTime - expected) > 0.9
+        Math.abs(audio.currentTime - expected) > 0.45
       ) {
         audio.currentTime = expected;
       }
@@ -3865,10 +3934,11 @@ function initBgmControls() {
   audio.preload = "metadata";
 
   audio.addEventListener("ended", async () => {
-    // The whole 20-song playlist loops back to song 1.
+    // The full playlist loops back to the first song.
     if (!state.roomBgm?.enabled) {
       state.bgmEnabled = false;
       stopBgmSegmentMonitor();
+      stopRoomBgmSyncTimer();
       syncBgmControls();
       return;
     }
@@ -3878,9 +3948,22 @@ function initBgmControls() {
     state.bgmEnabled = true;
     syncBgmControls();
 
+    if (isRoomBgmSyncLeader()) {
+      try {
+        await setRoomBgmState({
+          enabled: true,
+          trackIndex: 0,
+          positionSec: 0
+        }, { applyLocally: false });
+      } catch (error) {
+        console.warn("shared BGM playlist loop:", error);
+      }
+    }
+
     try {
       await audio.play();
       startBgmSegmentMonitor();
+      startRoomBgmSyncTimer();
     } catch (error) {
       console.error("BGM playlist loop:", error);
       state.bgmPlaybackBlocked = true;
@@ -3991,6 +4074,7 @@ async function applyRoomBgmState(
     }
 
     state.bgmPlaybackBlocked = false;
+    stopRoomBgmSyncTimer();
     syncBgmControls();
     return;
   }
@@ -4024,6 +4108,7 @@ async function applyRoomBgmState(
       await audio.play();
       state.bgmPlaybackBlocked = false;
       startBgmSegmentMonitor();
+      startRoomBgmSyncTimer();
 
     } catch (error) {
       // Browser autoplay policy can block a Realtime-triggered play().
@@ -4035,6 +4120,7 @@ async function applyRoomBgmState(
 
       state.bgmPlaybackBlocked = true;
       stopBgmSegmentMonitor();
+      stopRoomBgmSyncTimer();
       syncBgmControls();
     }
 
@@ -4043,6 +4129,7 @@ async function applyRoomBgmState(
 
     state.bgmPlaybackBlocked = true;
     stopBgmSegmentMonitor();
+    stopRoomBgmSyncTimer();
     syncBgmControls();
 
     showToast(
@@ -4062,6 +4149,7 @@ function pauseLocalBgm() {
   }
 
   stopBgmSegmentMonitor();
+  stopRoomBgmSyncTimer();
   state.bgmEnabled = false;
   state.bgmPlaybackBlocked = false;
   syncBgmControls();

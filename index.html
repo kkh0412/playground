@@ -5,12 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content="친구들과 함께 즐기는 온라인 미니게임 Playground" />
   <title>대관령산양의 놀이터</title>
-  <link rel="stylesheet" href="style.css?v=20260815-v19-1" />
+  <link rel="icon" type="image/png" href="assets/playground-goat.png" />
+  <link rel="apple-touch-icon" href="assets/playground-goat.png" />
+  <link rel="stylesheet" href="style.css?v=20260815-v20-1" />
 </head>
 <body>
   <header class="site-header">
     <button class="brand" data-nav="home" aria-label="대관령산양의 놀이터 홈">
-      <span class="brand-mark">🐐</span>
+      <span class="brand-mark">
+        <img src="assets/playground-goat.png" alt="대관령산양의 놀이터 아이콘" />
+      </span>
       <span>대관령산양의 놀이터</span>
     </button>
 
@@ -37,6 +41,10 @@
             <p class="hero-copy">
               공개방에서 새로운 사람을 만나거나, 비공개방에서 친구들과 실시간으로 플레이하세요.
             </p>
+          </div>
+
+          <div class="hero-art-panel" aria-hidden="true">
+            <img class="hero-goat-image" src="assets/playground-goat.png" alt="" />
           </div>
 
           <div class="hero-stats">
@@ -635,6 +643,6 @@
   <div id="toast" class="toast hidden" aria-live="polite"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="main.js?v=20260815-v19-1"></script>
+  <script src="main.js?v=20260815-v20-1"></script>
 </body>
 </html>
