@@ -482,6 +482,9 @@ const state = {
   bgmSegmentMonitor: null,
   bgmResolvedSrc: null,
   bgmResolvePromise: null,
+  roomBgm: null,
+  bgmLastDriftCheck: 0,
+  bgmPlaybackBlocked: false,
   accountGuardPoller: null,
   accountGuardMisses: 0,
   adminPoller: null,
@@ -700,7 +703,7 @@ function navigate(page, options = {}) {
     state.page === "game" && page !== "game";
 
   if (currentIsYachtArea && !nextIsYachtArea) {
-    pauseBgm();
+    pauseLocalBgm();
   }
 
   if (leavingGame && state.isSpectator) {
@@ -1421,6 +1424,7 @@ async function logout() {
   state.scores = [];
   state.messages = [];
   state.globalMessages = [];
+  state.roomBgm = null;
   state.isSpectator = false;
   rememberSpectatorRoom(null);
   clearManualSessionBackup();
@@ -1492,7 +1496,8 @@ async function refreshLobby() {
 
   await Promise.all([
     loadRoomPlayers(),
-    loadMessages()
+    loadMessages(),
+    loadRoomBgmState(state.activeRoom.id)
   ]);
 
   renderActiveRoom();
@@ -1702,6 +1707,8 @@ async function leaveSpectatorRoom(roomId, silent = false) {
     state.gameState = null;
     state.scores = [];
     state.messages = [];
+    state.roomBgm = null;
+    pauseLocalBgm();
     updatePresence();
   }
 }
@@ -1727,6 +1734,8 @@ function detachSpectatorForNavigation() {
   state.gameState = null;
   state.scores = [];
   state.messages = [];
+  state.roomBgm = null;
+  pauseLocalBgm();
 }
 
 
@@ -1910,6 +1919,8 @@ async function leaveWaitingRoom() {
     state.activeRoom = null;
     state.roomPlayers = [];
     state.messages = [];
+    state.roomBgm = null;
+    pauseLocalBgm();
     renderChat();
     showToast(tr("방에서 나왔습니다.", "Left the room."));
     await refreshLobby();
@@ -1988,7 +1999,10 @@ async function handleRoomRefresh() {
   const roomId = state.activeRoom.id;
   const { data: room, error } = await db
     .from("rooms")
-    .select("id, code, name, is_public, status, max_players, host_id")
+    .select(
+      "id, code, name, is_public, status, max_players, host_id, " +
+      "bgm_enabled, bgm_track_index, bgm_position_sec, bgm_updated_at"
+    )
     .eq("id", roomId)
     .maybeSingle();
 
@@ -2016,6 +2030,8 @@ async function handleRoomRefresh() {
     isPublic: Boolean(room.is_public)
   };
 
+  await applyRoomBgmState(room);
+
   await loadRoomPlayers();
 
   if (state.page === "lobby") {
@@ -2038,9 +2054,14 @@ async function enterGameRoom() {
   state.lastCelebratedRollId = null;
 
   await subscribeRoom(state.activeRoom.id);
-  await loadRoomPlayers();
-  await loadGameData();
-  await loadMessages();
+
+  await Promise.all([
+    loadRoomPlayers(),
+    loadGameData(),
+    loadMessages(),
+    loadRoomBgmState(state.activeRoom.id)
+  ]);
+
   renderGame();
   updatePresence();
 }
@@ -3461,6 +3482,11 @@ function allBgmToggleButtons() {
 function syncBgmControls() {
   allBgmTrackSelects().forEach(select => {
     select.value = String(state.bgmTrackIndex);
+
+    // Spectators follow the room music but cannot change it.
+    select.disabled =
+      Boolean(state.isSpectator) ||
+      !Boolean(state.activeRoom);
   });
 
   allBgmToggleButtons().forEach(button => {
@@ -3469,7 +3495,129 @@ function syncBgmControls() {
       : (state.bgmEnabled ? "♫ BGM ON" : "♫ BGM OFF");
 
     button.classList.toggle("active", state.bgmEnabled);
+
+    button.disabled =
+      Boolean(state.isSpectator) ||
+      !Boolean(state.activeRoom);
   });
+}
+
+function normalizeRoomBgm(row) {
+  if (!row) {
+    return {
+      enabled: false,
+      trackIndex: 0,
+      positionSec: 0,
+      updatedAt: null
+    };
+  }
+
+  const rawTrack = Number(row.bgm_track_index ?? 0);
+
+  return {
+    enabled: Boolean(row.bgm_enabled),
+    trackIndex:
+      Number.isInteger(rawTrack) &&
+      rawTrack >= 0 &&
+      rawTrack < BGM_TRACKS.length
+        ? rawTrack
+        : 0,
+    positionSec: Math.max(
+      0,
+      Number(row.bgm_position_sec ?? 0) || 0
+    ),
+    updatedAt:
+      row.bgm_updated_at ||
+      null
+  };
+}
+
+function roomBgmExpectedPosition(snapshot, audio) {
+  let position = Number(snapshot?.positionSec || 0);
+
+  if (snapshot?.enabled && snapshot.updatedAt) {
+    const updatedMs = Date.parse(snapshot.updatedAt);
+
+    if (Number.isFinite(updatedMs)) {
+      position += Math.max(
+        0,
+        (Date.now() - updatedMs) / 1000
+      );
+    }
+  }
+
+  // The combined MP3 loops as one continuous playlist.
+  if (
+    audio &&
+    Number.isFinite(audio.duration) &&
+    audio.duration > 0
+  ) {
+    position =
+      ((position % audio.duration) + audio.duration) %
+      audio.duration;
+  }
+
+  return position;
+}
+
+async function loadRoomBgmState(roomId) {
+  if (!roomId) return;
+
+  const { data, error } = await db
+    .from("rooms")
+    .select(
+      "id, bgm_enabled, bgm_track_index, " +
+      "bgm_position_sec, bgm_updated_at"
+    )
+    .eq("id", roomId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("room BGM state:", error);
+    return;
+  }
+
+  if (!data) return;
+
+  await applyRoomBgmState(data, {
+    forceSeek: true
+  });
+}
+
+async function setRoomBgmState({
+  enabled,
+  trackIndex,
+  positionSec
+}) {
+  if (!state.activeRoom || state.isSpectator) {
+    return null;
+  }
+
+  const { data, error } = await db.rpc(
+    "set_room_bgm_state",
+    {
+      p_room_id: state.activeRoom.id,
+      p_enabled: Boolean(enabled),
+      p_track_index: Number(trackIndex),
+      p_position_sec: Number(positionSec)
+    }
+  );
+
+  if (error) throw error;
+
+  if (data) {
+    await applyRoomBgmState(
+      {
+        bgm_enabled: data.enabled,
+        bgm_track_index: data.track_index,
+        bgm_position_sec: data.position_sec,
+        bgm_updated_at: data.updated_at
+      },
+      { forceSeek: true }
+    );
+  }
+
+  return data;
 }
 
 function audioErrorDescription(mediaError) {
@@ -3506,7 +3654,6 @@ function probeAudioSource(url, timeoutMs = 15000) {
       settled = true;
       cleanup();
 
-      // Stop the probe from continuing to download the full combined MP3.
       probe.pause();
       probe.removeAttribute("src");
       probe.load();
@@ -3520,6 +3667,7 @@ function probeAudioSource(url, timeoutMs = 15000) {
 
     const onError = () => {
       const reason = audioErrorDescription(probe.error);
+
       finish(
         reject,
         new Error(`${reason}: ${url}`)
@@ -3534,12 +3682,22 @@ function probeAudioSource(url, timeoutMs = 15000) {
     }, timeoutMs);
 
     probe.preload = "metadata";
-    probe.addEventListener("loadedmetadata", onReady, { once: true });
-    probe.addEventListener("canplay", onReady, { once: true });
-    probe.addEventListener("error", onError, { once: true });
+    probe.addEventListener(
+      "loadedmetadata",
+      onReady,
+      { once: true }
+    );
+    probe.addEventListener(
+      "canplay",
+      onReady,
+      { once: true }
+    );
+    probe.addEventListener(
+      "error",
+      onError,
+      { once: true }
+    );
 
-    // Do not use fetch/HEAD here. The HTMLMediaElement decoder is the
-    // authoritative test for whether this URL is actually playable.
     probe.src = url;
     probe.load();
   });
@@ -3555,7 +3713,8 @@ async function resolveBgmSource() {
   }
 
   state.bgmResolvePromise = (async () => {
-    const localUrl = new URL(BGM_LOCAL_SRC, document.baseURI).href;
+    const localUrl =
+      new URL(BGM_LOCAL_SRC, document.baseURI).href;
 
     const candidates = [
       {
@@ -3577,7 +3736,8 @@ async function resolveBgmSource() {
           candidate.url
         );
 
-        const resolved = await probeAudioSource(candidate.url);
+        const resolved =
+          await probeAudioSource(candidate.url);
 
         console.info(
           `[BGM] playable source found via ${candidate.label}:`,
@@ -3586,6 +3746,7 @@ async function resolveBgmSource() {
 
         state.bgmResolvedSrc = resolved;
         return resolved;
+
       } catch (error) {
         failures.push(
           `${candidate.label}: ${error.message}`
@@ -3623,31 +3784,54 @@ function startBgmSegmentMonitor() {
   const audio = el("bgmAudio");
 
   const tick = () => {
-    if (!state.bgmEnabled || audio.paused) {
+    if (
+      !state.bgmEnabled ||
+      audio.paused ||
+      !state.roomBgm?.enabled
+    ) {
       state.bgmSegmentMonitor = null;
       return;
     }
 
-    const currentIndex = bgmTrackIndexForTime(audio.currentTime);
+    const currentIndex =
+      bgmTrackIndexForTime(audio.currentTime);
 
     if (currentIndex !== state.bgmTrackIndex) {
       state.bgmTrackIndex = currentIndex;
-
-      localStorage.setItem(
-        "playground_bgm_track",
-        String(currentIndex)
-      );
 
       allBgmTrackSelects().forEach(select => {
         select.value = String(currentIndex);
       });
     }
 
-    state.bgmSegmentMonitor = requestAnimationFrame(tick);
+    // Correct drift between players against the room's server timestamp.
+    const now = performance.now();
+
+    if (now - state.bgmLastDriftCheck >= 1200) {
+      state.bgmLastDriftCheck = now;
+
+      const expected =
+        roomBgmExpectedPosition(
+          state.roomBgm,
+          audio
+        );
+
+      if (
+        Number.isFinite(expected) &&
+        Math.abs(audio.currentTime - expected) > 0.9
+      ) {
+        audio.currentTime = expected;
+      }
+    }
+
+    state.bgmSegmentMonitor =
+      requestAnimationFrame(tick);
   };
 
-  state.bgmSegmentMonitor = requestAnimationFrame(tick);
+  state.bgmSegmentMonitor =
+    requestAnimationFrame(tick);
 }
+
 function populateBgmTrackSelect(select) {
   select.innerHTML = BGM_TRACKS
     .map(
@@ -3661,7 +3845,9 @@ function populateBgmTrackSelect(select) {
 
 function initBgmControls() {
   const savedTrack = Number(
-    localStorage.getItem("playground_bgm_track") || 0
+    localStorage.getItem(
+      "playground_bgm_track"
+    ) || 0
   );
 
   state.bgmTrackIndex =
@@ -3671,16 +3857,34 @@ function initBgmControls() {
       ? savedTrack
       : 0;
 
-  allBgmTrackSelects().forEach(populateBgmTrackSelect);
+  allBgmTrackSelects()
+    .forEach(populateBgmTrackSelect);
 
   const audio = el("bgmAudio");
   audio.removeAttribute("src");
   audio.preload = "metadata";
 
-  audio.addEventListener("ended", () => {
-    stopBgmSegmentMonitor();
-    state.bgmEnabled = false;
+  audio.addEventListener("ended", async () => {
+    // The whole 20-song playlist loops back to song 1.
+    if (!state.roomBgm?.enabled) {
+      state.bgmEnabled = false;
+      stopBgmSegmentMonitor();
+      syncBgmControls();
+      return;
+    }
+
+    audio.currentTime = 0;
+    state.bgmTrackIndex = 0;
+    state.bgmEnabled = true;
     syncBgmControls();
+
+    try {
+      await audio.play();
+      startBgmSegmentMonitor();
+    } catch (error) {
+      console.error("BGM playlist loop:", error);
+      state.bgmPlaybackBlocked = true;
+    }
   });
 
   syncBgmControls();
@@ -3703,12 +3907,20 @@ function waitForAudioMetadata(audio) {
 
     const onError = () => {
       cleanup();
-      reject(new Error("bgm file unavailable"));
+      reject(
+        new Error("bgm file unavailable")
+      );
     };
 
     const cleanup = () => {
-      audio.removeEventListener("loadedmetadata", onLoaded);
-      audio.removeEventListener("error", onError);
+      audio.removeEventListener(
+        "loadedmetadata",
+        onLoaded
+      );
+      audio.removeEventListener(
+        "error",
+        onError
+      );
     };
 
     audio.addEventListener(
@@ -3739,55 +3951,110 @@ async function ensureBgmAudioSource() {
   return audio;
 }
 
-async function playSelectedBgm(restart = false) {
+async function applyRoomBgmState(
+  row,
+  { forceSeek = false } = {}
+) {
+  const snapshot = normalizeRoomBgm(row);
+  state.roomBgm = snapshot;
+
+  if (!state.activeRoom) {
+    return;
+  }
+
+  state.bgmEnabled = snapshot.enabled;
+
+  if (!snapshot.enabled) {
+    const audio = el("bgmAudio");
+
+    audio.pause();
+    stopBgmSegmentMonitor();
+
+    state.bgmTrackIndex =
+      snapshot.trackIndex;
+
+    if (
+      audio.readyState >= 1 &&
+      Number.isFinite(snapshot.positionSec)
+    ) {
+      const pausedPosition =
+        roomBgmExpectedPosition(
+          snapshot,
+          audio
+        );
+
+      if (Number.isFinite(pausedPosition)) {
+        audio.currentTime = pausedPosition;
+        state.bgmTrackIndex =
+          bgmTrackIndexForTime(pausedPosition);
+      }
+    }
+
+    state.bgmPlaybackBlocked = false;
+    syncBgmControls();
+    return;
+  }
+
   try {
-    const audio = await ensureBgmAudioSource();
-    const track = selectedBgmTrack();
+    const audio =
+      await ensureBgmAudioSource();
 
     await waitForAudioMetadata(audio);
 
-    if (restart) {
-      audio.currentTime = track.start;
-    } else if (
-      audio.currentTime < BGM_TRACKS[0].start ||
-      (
-        Number.isFinite(audio.duration) &&
-        audio.currentTime >= audio.duration
-      )
+    const expected =
+      roomBgmExpectedPosition(
+        snapshot,
+        audio
+      );
+
+    if (
+      forceSeek ||
+      audio.paused ||
+      Math.abs(audio.currentTime - expected) > 0.75
     ) {
-      audio.currentTime = track.start;
+      audio.currentTime = expected;
     }
 
-    await audio.play();
+    state.bgmTrackIndex =
+      bgmTrackIndexForTime(expected);
 
-    state.bgmEnabled = true;
     syncBgmControls();
-    startBgmSegmentMonitor();
+
+    try {
+      await audio.play();
+      state.bgmPlaybackBlocked = false;
+      startBgmSegmentMonitor();
+
+    } catch (error) {
+      // Browser autoplay policy can block a Realtime-triggered play().
+      // The room state still remains ON; the next user click resumes it.
+      console.warn(
+        "[BGM] browser blocked synchronized autoplay:",
+        error
+      );
+
+      state.bgmPlaybackBlocked = true;
+      stopBgmSegmentMonitor();
+      syncBgmControls();
+    }
 
   } catch (error) {
     console.error("BGM:", error);
 
-    state.bgmEnabled = false;
+    state.bgmPlaybackBlocked = true;
     stopBgmSegmentMonitor();
     syncBgmControls();
 
-    const details = String(error?.message || "");
-
-    console.error(
-      "[BGM] all playback sources failed:",
-      details
-    );
-
     showToast(
       tr(
-        "BGM을 열지 못했습니다. 개발자 도구 Console의 [BGM] 로그에서 실제 실패 URL과 원인을 확인할 수 있습니다.",
-        "Could not open the BGM. Check the [BGM] entries in the developer console for the failed URL and reason."
+        "BGM을 열지 못했습니다. 개발자 도구 Console의 [BGM] 로그를 확인하세요.",
+        "Could not open the BGM. Check the [BGM] entries in the developer console."
       )
     );
   }
 }
 
-function pauseBgm() {
+function pauseLocalBgm() {
   const audio = el("bgmAudio");
 
   if (audio) {
@@ -3796,25 +4063,84 @@ function pauseBgm() {
 
   stopBgmSegmentMonitor();
   state.bgmEnabled = false;
+  state.bgmPlaybackBlocked = false;
   syncBgmControls();
 }
 
 async function toggleBgm() {
-  if (state.bgmEnabled) {
-    pauseBgm();
+  if (
+    !state.activeRoom ||
+    state.isSpectator
+  ) {
     return;
   }
 
-  await playSelectedBgm(false);
+  const audio = el("bgmAudio");
+
+  try {
+    if (state.roomBgm?.enabled) {
+      let position =
+        state.roomBgm.positionSec;
+
+      if (
+        audio &&
+        audio.readyState >= 1 &&
+        Number.isFinite(audio.currentTime)
+      ) {
+        position = audio.currentTime;
+      }
+
+      await setRoomBgmState({
+        enabled: false,
+        trackIndex:
+          bgmTrackIndexForTime(position),
+        positionSec: position
+      });
+
+      return;
+    }
+
+    const resumePosition =
+      Number(
+        state.roomBgm?.positionSec ??
+        BGM_TRACKS[state.bgmTrackIndex].start
+      ) || 0;
+
+    await setRoomBgmState({
+      enabled: true,
+      trackIndex:
+        bgmTrackIndexForTime(resumePosition),
+      positionSec: resumePosition
+    });
+
+  } catch (error) {
+    console.error("toggle shared BGM:", error);
+
+    showToast(
+      tr(
+        "방의 배경음악 상태를 변경하지 못했습니다.",
+        "Could not change the room BGM state."
+      )
+    );
+  }
 }
 
 async function changeBgmTrack(event = null) {
+  if (
+    !state.activeRoom ||
+    state.isSpectator
+  ) {
+    syncBgmControls();
+    return;
+  }
+
   const sourceSelect =
     event?.currentTarget ||
     event?.target ||
     el("bgmTrackSelect");
 
-  const index = Number(sourceSelect.value);
+  const index =
+    Number(sourceSelect.value);
 
   if (
     !Number.isInteger(index) ||
@@ -3824,18 +4150,60 @@ async function changeBgmTrack(event = null) {
     return;
   }
 
-  state.bgmTrackIndex = index;
+  const position =
+    BGM_TRACKS[index].start;
 
-  localStorage.setItem(
-    "playground_bgm_track",
-    String(index)
-  );
+  try {
+    // Selecting a track turns the room BGM ON for everyone and
+    // jumps every player to the same timestamp.
+    await setRoomBgmState({
+      enabled: true,
+      trackIndex: index,
+      positionSec: position
+    });
 
-  allBgmTrackSelects().forEach(select => {
-    select.value = String(index);
-  });
+  } catch (error) {
+    console.error("change shared BGM track:", error);
 
-  await playSelectedBgm(true);
+    syncBgmControls();
+
+    showToast(
+      tr(
+        "방의 음악을 변경하지 못했습니다.",
+        "Could not change the room music."
+      )
+    );
+  }
+}
+
+async function resumeBlockedRoomBgmFromGesture() {
+  if (
+    !state.bgmPlaybackBlocked ||
+    !state.roomBgm?.enabled ||
+    !state.activeRoom
+  ) {
+    return;
+  }
+
+  try {
+    await applyRoomBgmState(
+      {
+        bgm_enabled: true,
+        bgm_track_index:
+          state.roomBgm.trackIndex,
+        bgm_position_sec:
+          state.roomBgm.positionSec,
+        bgm_updated_at:
+          state.roomBgm.updatedAt
+      },
+      { forceSeek: true }
+    );
+  } catch (error) {
+    console.error(
+      "resume synchronized BGM:",
+      error
+    );
+  }
 }
 
 async function loadMessages() {
@@ -4328,7 +4696,7 @@ async function copyRoomCode() {
 }
 
 function leaveGameScreen() {
-  pauseBgm();
+  pauseLocalBgm();
   el("gameOverModal").classList.add("hidden");
   navigate("home");
 }
@@ -4420,8 +4788,17 @@ el("leaveRoomBtn").addEventListener("click", leaveWaitingRoom);
 el("rollBtn").addEventListener("click", rollDice);
 
 document.addEventListener("pointerdown", event => {
-  const control = event.target.closest("button:not(:disabled), .score-row.selectable");
-  if (control) playClickSound();
+  const control = event.target.closest(
+    "button:not(:disabled), .score-row.selectable"
+  );
+
+  if (control) {
+    playClickSound();
+  }
+
+  // If a remote player turned music on but the browser blocked
+  // autoplay, the next user gesture resumes at the shared position.
+  resumeBlockedRoomBgmFromGesture();
 });
 
 el("languageToggleBtn").addEventListener("click", toggleLanguage);
