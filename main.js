@@ -282,14 +282,33 @@ async function loadProfile() {
     return;
   }
 
-  const { data, error } = await db
+  let { data, error } = await db
     .from("profiles")
     .select("id, username, wins, losses, draws")
     .eq("id", currentUserId())
-    .single();
+    .maybeSingle();
 
-  if (error) {
-    console.error(error);
+  if (!error && !data) {
+    const repair = await db.rpc("ensure_my_profile");
+
+    if (repair.error) {
+      console.error("ensure_my_profile failed:", repair.error);
+      state.profile = null;
+      return;
+    }
+
+    const retry = await db
+      .from("profiles")
+      .select("id, username, wins, losses, draws")
+      .eq("id", currentUserId())
+      .maybeSingle();
+
+    data = retry.data;
+    error = retry.error;
+  }
+
+  if (error || !data) {
+    console.error("profile load failed:", error);
     state.profile = null;
     return;
   }
@@ -297,69 +316,60 @@ async function loadProfile() {
   state.profile = data;
 }
 
-async function renderAccount() {
-  el("authView").classList.toggle("hidden", isLoggedIn());
-  el("profileView").classList.toggle("hidden", !isLoggedIn());
-
-  if (!isLoggedIn()) return;
-
-  if (!state.profile) await loadProfile();
-  if (!state.profile) return;
-
-  const { wins, losses, draws, username } = state.profile;
-  const games = wins + losses + draws;
-  const winRate = games ? Math.round((wins / games) * 1000) / 10 : 0;
-
-  el("profileName").textContent = username;
-  el("profileAvatar").textContent = username[0]?.toUpperCase() || "P";
-  el("statGames").textContent = games;
-  el("statWins").textContent = wins;
-  el("statLosses").textContent = losses;
-  el("statDraws").textContent = draws;
-  el("statWinRate").textContent = `${winRate}%`;
-
-  const { data: history, error } = await db
-    .from("match_history")
-    .select("result, score, player_count, created_at")
-    .eq("user_id", currentUserId())
-    .order("created_at", { ascending: false })
-    .limit(20);
-
-  const container = el("matchHistory");
-  container.innerHTML = "";
-
-  if (error) {
-    console.error(error);
-    container.innerHTML = `<div class="empty-state"><span>경기 기록을 불러오지 못했습니다.</span></div>`;
-    return;
+async function ensureProfileReady() {
+  if (!isLoggedIn()) {
+    throw new Error("로그인이 필요합니다.");
   }
 
-  if (!history?.length) {
-    container.innerHTML = `<div class="empty-state"><span>아직 경기 기록이 없습니다.</span></div>`;
-    return;
+  if (state.profile?.id === currentUserId()) {
+    return state.profile;
   }
 
-  history.forEach(item => {
-    const row = document.createElement("div");
-    row.className = "history-item";
+  await loadProfile();
 
-    const label =
-      item.result === "win" ? "승" :
-      item.result === "loss" ? "패" : "무";
+  if (!state.profile) {
+    const { error } = await db.rpc("ensure_my_profile");
+    if (error) throw error;
+    await loadProfile();
+  }
 
-    const resultClass =
-      item.result === "win" ? "result-win" :
-      item.result === "loss" ? "result-loss" : "result-draw";
+  if (!state.profile) {
+    throw new Error(
+      "사용자 프로필을 준비하지 못했습니다. Supabase DB 패치를 적용해 주세요."
+    );
+  }
 
-    row.innerHTML = `
-      <div>
-        <strong>Yacht Dice · ${item.score}점 · ${item.player_count}인 경기</strong>
-        <small>${new Date(item.created_at).toLocaleString("ko-KR")}</small>
-      </div>
-      <strong class="${resultClass}">${label}</strong>
-    `;
-    container.appendChild(row);
-  });
+  return state.profile;
+}
+
+function roomErrorMessage(error) {
+  const message = error?.message || "";
+
+  if (
+    message.includes("Could not find the function") ||
+    message.includes("schema cache") ||
+    message.includes("ensure_my_profile")
+  ) {
+    return "Supabase의 방 생성 함수가 설치되지 않았습니다. supabase_room_fix.sql을 실행해 주세요.";
+  }
+
+  if (
+    message.includes("foreign key") ||
+    message.includes("profiles") ||
+    message.includes("profile")
+  ) {
+    return "계정 프로필 연결에 문제가 있습니다. DB 복구 패치를 적용한 뒤 다시 로그인해 주세요.";
+  }
+
+  if (message.includes("active room")) {
+    return "이미 참가 중인 대기방 또는 진행 중인 게임이 있습니다.";
+  }
+
+  if (message.includes("login required") || message.includes("JWT")) {
+    return "로그인 세션이 만료되었습니다. 다시 로그인해 주세요.";
+  }
+
+  return message || "방을 만들지 못했습니다.";
 }
 
 async function signup(event) {
@@ -508,9 +518,24 @@ async function refreshLobby() {
 
 async function createRoom() {
   if (state.busy) return;
+
+  if (!isLoggedIn()) {
+    navigate("account");
+    showToast("로그인 후 방을 만들 수 있습니다.");
+    return;
+  }
+
   state.busy = true;
 
+  const button = el("createRoomBtn");
+  const originalText = button.textContent;
+
+  button.disabled = true;
+  button.textContent = "방 만드는 중...";
+
   try {
+    await ensureProfileReady();
+
     const { data, error } = await db.rpc("create_yacht_room", {
       p_max_players: state.maxPlayers
     });
@@ -518,13 +543,32 @@ async function createRoom() {
     if (error) throw error;
 
     const row = Array.isArray(data) ? data[0] : data;
+
+    if (!row?.room_id || !row?.room_code) {
+      throw new Error("서버가 올바른 방 정보를 반환하지 않았습니다.");
+    }
+
+    state.activeRoom = {
+      id: row.room_id,
+      code: row.room_code,
+      status: "waiting",
+      maxPlayers: state.maxPlayers,
+      hostId: currentUserId()
+    };
+
     showToast(`방 ${row.room_code}이 생성되었습니다.`);
+
     await refreshLobby();
+    await updatePresence();
+
   } catch (error) {
-    console.error(error);
-    showToast(error.message || "방을 만들지 못했습니다.");
+    console.error("createRoom failed:", error);
+    showToast(roomErrorMessage(error));
+
   } finally {
     state.busy = false;
+    button.disabled = false;
+    button.textContent = originalText;
   }
 }
 
@@ -539,7 +583,10 @@ async function joinRoom(event) {
   }
 
   state.busy = true;
+
   try {
+    await ensureProfileReady();
+  
     const { error } = await db.rpc("join_yacht_room", {
       p_room_code: code
     });
@@ -551,7 +598,9 @@ async function joinRoom(event) {
     await refreshLobby();
   } catch (error) {
     console.error(error);
-    showToast(error.message || "방에 입장하지 못했습니다.");
+    showToast(
+      roomErrorMessage(error).replace("방을 만들지", "방에 입장하지")
+    );
   } finally {
     state.busy = false;
   }
