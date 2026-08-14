@@ -166,7 +166,14 @@ function isAdmin() {
 
 function navigate(page) {
   const leavingGame = state.page === "game" && page !== "game";
-  if (leavingGame) pauseBgm();
+
+  if (leavingGame) {
+    pauseBgm();
+
+    if (state.isSpectator) {
+      detachSpectatorForNavigation();
+    }
+  }
 
   if ((page === "lobby" || page === "game") && !isLoggedIn()) {
     page = "account";
@@ -279,6 +286,7 @@ async function init() {
     if (session) {
       await loadProfile();
       startAccountGuard();
+      await clearStaleSpectatorSession();
     } else {
       state.profile = null;
       stopAccountGuard();
@@ -287,6 +295,7 @@ async function init() {
     renderHeader();
     renderAccount();
     await refreshHome();
+    await setupGlobalChat();
 
     if (!session && (state.page === "lobby" || state.page === "game" || state.page === "admin")) {
       cleanupRoomChannel();
@@ -300,8 +309,10 @@ async function init() {
   renderHeader();
   setConnectionBadge(true, "ONLINE");
   await refreshHome();
+  await setupGlobalChat();
 
   if (session) {
+    await clearStaleSpectatorSession();
     await refreshActiveRoom();
   }
 
@@ -657,12 +668,20 @@ async function login(event) {
 
 async function logout() {
   stopAccountGuard();
+
+  if (state.isSpectator && state.activeRoom) {
+    await leaveSpectatorRoom(state.activeRoom.id, true);
+  }
+
+  cleanupGlobalChatChannel();
   cleanupRoomChannel();
   state.activeRoom = null;
   state.roomPlayers = [];
   state.gameState = null;
   state.scores = [];
   state.messages = [];
+  state.globalMessages = [];
+  state.isSpectator = false;
   await db.auth.signOut();
   navigate("home");
 }
@@ -680,6 +699,11 @@ async function refreshActiveRoom() {
   }
 
   const row = Array.isArray(data) ? data[0] : data;
+
+  if (row?.room_id) {
+    state.isSpectator = false;
+  }
+
   state.activeRoom = row?.room_id ? {
     id: row.room_id,
     code: row.room_code,
@@ -837,6 +861,123 @@ async function joinRoomByCode(code) {
   }
 }
 
+
+
+async function clearStaleSpectatorSession() {
+  if (!isLoggedIn()) return;
+
+  const { error } = await db.rpc("clear_my_yacht_spectators");
+
+  if (error) {
+    console.error("clear stale spectator session:", error);
+  }
+}
+
+async function spectatePublicRoom(roomId) {
+  if (!isLoggedIn()) {
+    navigate("account");
+    showToast("로그인 후 관전할 수 있습니다.");
+    return;
+  }
+
+  if (state.busy) return;
+
+  state.busy = true;
+
+  try {
+    const { data, error } = await db.rpc("spectate_yacht_room", {
+      p_room_id: roomId
+    });
+
+    if (error) throw error;
+
+    const row = Array.isArray(data) ? data[0] : data;
+
+    if (!row?.room_id) {
+      throw new Error("관전할 방 정보를 불러오지 못했습니다.");
+    }
+
+    stopPublicRoomPolling();
+
+    state.isSpectator = true;
+    state.activeRoom = {
+      id: row.room_id,
+      code: row.room_code,
+      status: row.room_status,
+      maxPlayers: row.max_players,
+      hostId: row.host_id,
+      name: row.room_name || "Yacht Dice",
+      isPublic: true
+    };
+
+    state.roomPlayers = [];
+    state.gameState = null;
+    state.scores = [];
+    state.messages = [];
+
+    navigate("game");
+    showToast(`${state.activeRoom.name} 관전을 시작했습니다.`);
+  } catch (error) {
+    console.error("spectate room:", error);
+    showToast(error.message || "방을 관전하지 못했습니다.");
+  } finally {
+    state.busy = false;
+  }
+}
+
+async function leaveSpectatorRoom(roomId, silent = false) {
+  if (!state.isSpectator) return;
+
+  try {
+    if (isLoggedIn() && roomId) {
+      const { error } = await db.rpc("leave_yacht_spectator", {
+        p_room_id: roomId
+      });
+
+      if (error) throw error;
+    }
+  } catch (error) {
+    console.error("leave spectator:", error);
+
+    if (!silent) {
+      showToast("관전 종료 처리 중 오류가 발생했습니다.");
+    }
+  } finally {
+    cleanupRoomChannel();
+    state.isSpectator = false;
+    state.activeRoom = null;
+    state.roomPlayers = [];
+    state.gameState = null;
+    state.scores = [];
+    state.messages = [];
+    updatePresence();
+  }
+}
+
+function detachSpectatorForNavigation() {
+  if (!state.isSpectator || !state.activeRoom) return;
+
+  const roomId = state.activeRoom.id;
+
+  // Fire the authenticated cleanup request before clearing local state.
+  if (isLoggedIn()) {
+    db.rpc("leave_yacht_spectator", { p_room_id: roomId })
+      .then(({ error }) => {
+        if (error) console.error("spectator cleanup:", error);
+      });
+  }
+
+  cleanupRoomChannel();
+  document.body.classList.remove("spectator-mode");
+  state.isSpectator = false;
+  state.activeRoom = null;
+  state.roomPlayers = [];
+  state.gameState = null;
+  state.scores = [];
+  state.messages = [];
+}
+
+
 async function refreshPublicRooms() {
   if (!isLoggedIn() || state.activeRoom) return;
 
@@ -866,21 +1007,38 @@ function renderPublicRooms() {
   state.publicRooms.forEach(room => {
     const card = document.createElement("article");
     card.className = "public-room-row";
+
+    const playing = room.room_status === "playing";
     const full = Number(room.player_count) >= Number(room.max_players);
 
     card.innerHTML = `
       <div class="public-room-main">
         <div class="public-room-title">
           <strong>${escapeHTML(room.room_name)}</strong>
-          <span class="demo-badge">PUBLIC</span>
+          <span class="demo-badge">${playing ? "PLAYING" : "WAITING"}</span>
         </div>
-        <small>HOST ${escapeHTML(room.host_username)} · 방 코드 ${escapeHTML(room.room_code)}</small>
+        <small>
+          HOST ${escapeHTML(room.host_username)}
+          · 방 코드 ${escapeHTML(room.room_code)}
+          ${playing ? `· 관전자 ${Number(room.spectator_count || 0)}명` : ""}
+        </small>
       </div>
+
       <div class="public-room-side">
         <strong>${room.player_count} / ${room.max_players}</strong>
-        <button class="primary-btn public-join-btn" data-code="${escapeHTML(room.room_code)}" ${full ? "disabled" : ""}>
-          ${full ? "가득 참" : "참여"}
-        </button>
+
+        ${
+          playing
+            ? `<button
+                 class="secondary-btn public-spectate-btn"
+                 data-room-id="${escapeHTML(room.room_id)}"
+               >관전</button>`
+            : `<button
+                 class="primary-btn public-join-btn"
+                 data-code="${escapeHTML(room.room_code)}"
+                 ${full ? "disabled" : ""}
+               >${full ? "가득 참" : "참여"}</button>`
+        }
       </div>
     `;
 
@@ -1617,6 +1775,12 @@ function renderGameHud() {
   const player = currentTurnPlayer();
   if (!player) return;
 
+  el("gameModeBadge").classList.toggle("hidden", !state.isSpectator);
+
+  el("gameHelpText").textContent = state.isSpectator
+    ? "관전 모드입니다. 게임 상태를 실시간으로 볼 수 있고 채팅만 보낼 수 있습니다."
+    : "자신의 차례에만 주사위를 굴릴 수 있습니다. 주사위를 누르면 고정되며, 점수표의 한 항목을 선택하면 다음 플레이어로 차례가 넘어갑니다.";
+
   const used = Object.keys(playerScoreMap(player.userId)).length;
 
   el("currentPlayerText").textContent = player.username;
@@ -1636,6 +1800,9 @@ function renderGameHud() {
 
   if (state.gameState.finished) {
     el("statusText").textContent = "게임이 종료되었습니다.";
+  } else if (state.isSpectator) {
+    el("statusText").textContent =
+      `${player.username}님의 차례를 관전 중입니다. 게임 조작은 할 수 없습니다.`;
   } else if (isMyTurn()) {
     el("statusText").textContent =
       state.gameState.rolls_left > 0
@@ -1752,6 +1919,169 @@ async function handleGameRefresh() {
   }
 
   renderGame();
+}
+
+
+
+function initGlobalEmojiPicker() {
+  const picker = el("globalEmojiPicker");
+
+  picker.innerHTML = CHAT_EMOJIS
+    .map(emoji => `<button type="button" class="emoji-option" data-global-emoji="${emoji}">${emoji}</button>`)
+    .join("");
+}
+
+function setGlobalChatAvailability() {
+  const enabled = isLoggedIn();
+
+  el("globalChatInput").disabled = !enabled;
+  el("globalChatSendBtn").disabled = !enabled;
+  el("globalEmojiToggleBtn").disabled = !enabled;
+  el("globalChatLoginHint").classList.toggle("hidden", enabled);
+
+  if (!enabled) {
+    el("globalChatInput").placeholder = "로그인 후 전체 채팅에 참여할 수 있습니다";
+  } else {
+    el("globalChatInput").placeholder = "모두에게 메시지를 보내세요";
+  }
+}
+
+async function loadGlobalMessages() {
+  const { data, error } = await db
+    .from("global_messages")
+    .select("id, sender_id, sender_name, body, created_at")
+    .order("created_at", { ascending: true })
+    .limit(120);
+
+  if (error) {
+    console.error("global chat load:", error);
+    el("globalChatMessages").innerHTML =
+      `<div class="chat-empty">전체 채팅을 불러오지 못했습니다.</div>`;
+    return;
+  }
+
+  state.globalMessages = data || [];
+  renderGlobalChat();
+}
+
+function renderGlobalChat() {
+  const container = el("globalChatMessages");
+  container.innerHTML = "";
+
+  setGlobalChatAvailability();
+
+  if (!state.globalMessages.length) {
+    container.innerHTML =
+      `<div class="chat-empty">아직 전체 채팅 메시지가 없습니다.</div>`;
+  } else {
+    state.globalMessages.forEach(message => {
+      const item = document.createElement("div");
+      item.className =
+        `global-chat-message ${isEmojiOnlyMessage(message.body) ? "emoji-only" : ""}`;
+
+      item.innerHTML = `
+        <div class="global-chat-message-head">
+          <strong>${escapeHTML(message.sender_name)}</strong>
+          <small>${new Date(message.created_at).toLocaleTimeString("ko-KR", {
+            hour: "2-digit",
+            minute: "2-digit"
+          })}</small>
+        </div>
+        <p>${escapeHTML(message.body)}</p>
+      `;
+
+      container.appendChild(item);
+    });
+  }
+
+  el("globalChatCount").textContent = String(state.globalMessages.length);
+  container.scrollTop = container.scrollHeight;
+}
+
+function cleanupGlobalChatChannel() {
+  if (state.globalChatChannel && db) {
+    db.removeChannel(state.globalChatChannel);
+  }
+
+  state.globalChatChannel = null;
+}
+
+async function setupGlobalChat() {
+  cleanupGlobalChatChannel();
+  setGlobalChatAvailability();
+
+  await loadGlobalMessages();
+
+  state.globalChatChannel = db
+    .channel("playground-global-chat-messages")
+    .on(
+      "postgres_changes",
+      {
+        event: "INSERT",
+        schema: "public",
+        table: "global_messages"
+      },
+      payload => {
+        if (!state.globalMessages.some(message => message.id === payload.new.id)) {
+          state.globalMessages.push(payload.new);
+
+          if (state.globalMessages.length > 120) {
+            state.globalMessages = state.globalMessages.slice(-120);
+          }
+
+          renderGlobalChat();
+        }
+      }
+    )
+    .subscribe();
+}
+
+async function sendGlobalChat(event) {
+  event.preventDefault();
+
+  if (!isLoggedIn()) {
+    navigate("account");
+    showToast("로그인 후 전체 채팅을 사용할 수 있습니다.");
+    return;
+  }
+
+  const input = el("globalChatInput");
+  const body = input.value.trim();
+
+  if (!body) return;
+
+  input.value = "";
+
+  try {
+    const { error } = await db.rpc("send_global_message", {
+      p_body: body
+    });
+
+    if (error) throw error;
+  } catch (error) {
+    console.error("global chat send:", error);
+    showToast(error.message || "전체 채팅 메시지를 보내지 못했습니다.");
+  }
+}
+
+function toggleGlobalEmojiPicker() {
+  if (!isLoggedIn()) return;
+  el("globalEmojiPicker").classList.toggle("hidden");
+}
+
+function insertGlobalEmoji(emoji) {
+  const input = el("globalChatInput");
+  const start = input.selectionStart ?? input.value.length;
+  const end = input.selectionEnd ?? input.value.length;
+
+  input.value =
+    input.value.slice(0, start) +
+    emoji +
+    input.value.slice(end);
+
+  const cursor = start + emoji.length;
+  input.focus();
+  input.setSelectionRange(cursor, cursor);
 }
 
 
@@ -2310,8 +2640,18 @@ document.querySelectorAll(".visibility-btn").forEach(button => {
 });
 
 el("publicRoomsList").addEventListener("click", event => {
-  const button = event.target.closest(".public-join-btn");
-  if (button && !button.disabled) joinRoomByCode(button.dataset.code);
+  const joinButton = event.target.closest(".public-join-btn");
+
+  if (joinButton && !joinButton.disabled) {
+    joinRoomByCode(joinButton.dataset.code);
+    return;
+  }
+
+  const spectateButton = event.target.closest(".public-spectate-btn");
+
+  if (spectateButton && !spectateButton.disabled) {
+    spectatePublicRoom(spectateButton.dataset.roomId);
+  }
 });
 
 el("refreshPublicRoomsBtn").addEventListener("click", refreshPublicRooms);
@@ -2346,6 +2686,16 @@ el("leaveRoomBtn").addEventListener("click", leaveWaitingRoom);
 
 el("rollBtn").addEventListener("click", rollDice);
 
+el("globalChatForm").addEventListener("submit", sendGlobalChat);
+el("globalEmojiToggleBtn").addEventListener("click", toggleGlobalEmojiPicker);
+el("globalEmojiPicker").addEventListener("click", event => {
+  const button = event.target.closest("[data-global-emoji]");
+  if (!button) return;
+
+  insertGlobalEmoji(button.dataset.globalEmoji);
+  el("globalEmojiPicker").classList.add("hidden");
+});
+
 el("emojiToggleBtn").addEventListener("click", toggleEmojiPicker);
 el("emojiPicker").addEventListener("click", event => {
   const button = event.target.closest("[data-emoji]");
@@ -2362,6 +2712,13 @@ document.addEventListener("click", event => {
   ) {
     el("emojiPicker").classList.add("hidden");
   }
+
+  if (
+    !event.target.closest("#globalEmojiPicker") &&
+    !event.target.closest("#globalEmojiToggleBtn")
+  ) {
+    el("globalEmojiPicker").classList.add("hidden");
+  }
 });
 
 el("bgmToggleBtn").addEventListener("click", toggleBgm);
@@ -2374,9 +2731,12 @@ el("finishGameBtn").addEventListener("click", leaveGameScreen);
 window.addEventListener("beforeunload", () => {
   stopAccountGuard();
   stopPublicRoomPolling();
+  cleanupGlobalChatChannel();
   if (state.presenceChannel) state.presenceChannel.untrack();
 });
 
 initEmojiPicker();
+initGlobalEmojiPicker();
 initBgmControls();
+renderGlobalChat();
 init();

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content="친구들과 함께 즐기는 온라인 미니게임 Playground" />
   <title>대관령산양의 놀이터</title>
-  <link rel="stylesheet" href="style.css?v=20260814-v5-1" />
+  <link rel="stylesheet" href="style.css?v=20260814-v6-1" />
 </head>
 <body>
   <header class="site-header">
@@ -97,6 +97,35 @@
               </div>
             </article>
           </div>
+        </section>
+
+        <section class="section-block home-chat-section">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">GLOBAL CHAT</p>
+              <h2>전체 채팅</h2>
+            </div>
+            <span id="globalChatCount" class="demo-badge">0</span>
+          </div>
+
+          <section class="card global-chat-panel">
+            <div id="globalChatMessages" class="global-chat-messages" aria-live="polite">
+              <div class="chat-empty">전체 채팅을 불러오는 중입니다.</div>
+            </div>
+
+            <form id="globalChatForm" class="global-chat-form">
+              <div class="chat-input-wrap">
+                <button id="globalEmojiToggleBtn" class="emoji-toggle-btn" type="button" aria-label="이모티콘 열기">☺</button>
+                <input id="globalChatInput" maxlength="200" placeholder="모두에게 메시지를 보내세요" autocomplete="off" />
+                <div id="globalEmojiPicker" class="emoji-picker hidden" aria-label="이모티콘 선택"></div>
+              </div>
+              <button id="globalChatSendBtn" class="primary-btn" type="submit">전송</button>
+            </form>
+
+            <p id="globalChatLoginHint" class="global-chat-login-hint hidden">
+              로그인하면 전체 채팅에 참여할 수 있습니다.
+            </p>
+          </section>
         </section>
       </div>
     </section>
@@ -317,6 +346,7 @@
             </div>
 
             <div class="game-room-code">
+              <span id="gameModeBadge" class="demo-badge spectator-badge hidden">SPECTATING</span>
               <span id="gameRoomName">게임방</span> · 방 코드
               <strong id="gameRoomCode">------</strong>
             </div>
@@ -351,7 +381,7 @@
 
             <div class="help">
               <strong>조작법</strong>
-              <p>
+              <p id="gameHelpText">
                 자신의 차례에만 주사위를 굴릴 수 있습니다. 주사위를 누르면 고정되며,
                 점수표의 한 항목을 선택하면 다음 플레이어로 차례가 넘어갑니다.
               </p>
@@ -479,6 +509,6 @@
   <div id="toast" class="toast hidden" aria-live="polite"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="main.js?v=20260814-v5-1"></script>
+  <script src="main.js?v=20260814-v6-1"></script>
 </body>
 </html>
