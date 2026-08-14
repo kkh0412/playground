@@ -234,6 +234,101 @@ async function initPresence() {
     });
 }
 
+async function renderAccount() {
+  el("authView").classList.toggle("hidden", isLoggedIn());
+  el("profileView").classList.toggle("hidden", !isLoggedIn());
+
+  if (!isLoggedIn()) return;
+
+  if (!state.profile) await loadProfile();
+  if (!state.profile) return;
+
+  const { wins, losses, draws, username } = state.profile;
+  const games = wins + losses + draws;
+  const winRate = games
+    ? Math.round((wins / games) * 1000) / 10
+    : 0;
+
+  el("profileName").textContent = username;
+  el("profileAvatar").textContent =
+    username[0]?.toUpperCase() || "P";
+
+  el("statGames").textContent = games;
+  el("statWins").textContent = wins;
+  el("statLosses").textContent = losses;
+  el("statDraws").textContent = draws;
+  el("statWinRate").textContent = `${winRate}%`;
+
+  const { data: history, error } = await db
+    .from("match_history")
+    .select("result, score, player_count, created_at")
+    .eq("user_id", currentUserId())
+    .order("created_at", { ascending: false })
+    .limit(20);
+
+  const container = el("matchHistory");
+  container.innerHTML = "";
+
+  if (error) {
+    console.error(error);
+
+    container.innerHTML = `
+      <div class="empty-state">
+        <span>경기 기록을 불러오지 못했습니다.</span>
+      </div>
+    `;
+
+    return;
+  }
+
+  if (!history?.length) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <span>아직 경기 기록이 없습니다.</span>
+      </div>
+    `;
+
+    return;
+  }
+
+  history.forEach(item => {
+    const row = document.createElement("div");
+    row.className = "history-item";
+
+    const label =
+      item.result === "win"
+        ? "승"
+        : item.result === "loss"
+          ? "패"
+          : "무";
+
+    const resultClass =
+      item.result === "win"
+        ? "result-win"
+        : item.result === "loss"
+          ? "result-loss"
+          : "result-draw";
+
+    row.innerHTML = `
+      <div>
+        <strong>
+          Yacht Dice · ${item.score}점 ·
+          ${item.player_count}인 경기
+        </strong>
+        <small>
+          ${new Date(item.created_at).toLocaleString("ko-KR")}
+        </small>
+      </div>
+
+      <strong class="${resultClass}">
+        ${label}
+      </strong>
+    `;
+
+    container.appendChild(row);
+  });
+}
+
 async function updatePresence() {
   if (!state.presenceChannel) return;
 
